@@ -14,8 +14,8 @@
 - [x] Transform gizmos with snapping and numeric entry
 - [x] undo/redo command stack
 - [x] pose library and humanoid skeleton retarget contract
-- [~] actor/camera/light paths with keyframes and easing — actor + camera complete; light animation pending
-- [~] camera rigs and lens presets — Dolly/Crane/Orbit complete; lens preset library pending
+- [x] actor/camera/light paths with keyframes and easing
+- [x] camera rigs and director lens presets
 - [x] exposure, shadow and selectable light gizmos
 - [ ] GLB/FBX ingest normalization and asset diagnostics
 
