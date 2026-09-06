@@ -38,7 +38,7 @@ Windows 11 是一等支持平台。开发版可直接双击 `start-windows.cmd`�
 npm run check
 ```
 
-每次提交必须通过静态工业审计、Windows 兼容审计、单元/回归测试和 production build。Gate 2 当前覆盖确定性时间轴、波形、OTIO round-trip、MP4 帧计划以及旧工程兼容测试。
+每次提交必须通过静态工业审计、Windows 兼容审计、单元/回归测试和 production build。Gate 2 已覆盖确定性时间轴、波形、OTIO round-trip、MP4 帧计划以及旧工程兼容测试；当前回归套件共 35 项。
 
 ## 架构原则
 
@@ -67,4 +67,4 @@ npm run check
 - 服务端 WebSocket/Yjs 与权限层
 - AI：Pose/Depth/Lineart/Camera motion 结构控制与下游视频生成
 
-> Gate 0 与 Gate 1 已完成；Gate 2 功能实现已进入跨平台验收。仓库以严格版本门禁持续迭代，而不是一次性堆功能。
+> Gate 0、Gate 1、Gate 2 已完成并通过 Windows + Ubuntu 双平台 CI；下一阶段为 Gate 3 协作与 Review 工业化。仓库以严格版本门禁持续迭代，而不是一次性堆功能。
