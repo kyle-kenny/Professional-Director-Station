@@ -1,4 +1,4 @@
-import type { Actor, ActorKeyframe, Easing, ShotCamera, Transform, Vec3 } from '../domain/model';
+import type { Actor, ActorKeyframe, DirectorLight, Easing, LightKeyframe, ShotCamera, Transform, Vec3 } from '../domain/model';
 
 const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
@@ -80,4 +80,41 @@ export function sampleCamera(camera: ShotCamera, time: number): ShotCamera {
     };
   }
   return structuredClone(camera);
+}
+
+function lightFrameTarget(frame: LightKeyframe, fallback?: Vec3): Vec3 | undefined {
+  return frame.target ?? fallback;
+}
+
+export function sampleLight(light: DirectorLight, time: number): DirectorLight {
+  if (light.path.length === 0) return structuredClone(light);
+  const frames = [...light.path].sort((a, b) => a.time - b.time);
+  const applyFrame = (frame: LightKeyframe): DirectorLight => ({
+    ...structuredClone(light),
+    position: { ...frame.position },
+    target: lightFrameTarget(frame, light.target) ? { ...lightFrameTarget(frame, light.target)! } : undefined,
+    intensity: frame.intensity ?? light.intensity,
+    colorTemperatureK: frame.colorTemperatureK ?? light.colorTemperatureK,
+  });
+  if (time <= frames[0].time) return applyFrame(frames[0]);
+  const last = frames[frames.length - 1];
+  if (time >= last.time) return applyFrame(last);
+  for (let index = 0; index < frames.length - 1; index += 1) {
+    const from = frames[index];
+    const to = frames[index + 1];
+    if (time < from.time || time > to.time) continue;
+    const span = Math.max(1e-6, to.time - from.time);
+    const t = ease((time - from.time) / span, from.easing);
+    const fromTarget = lightFrameTarget(from, light.target);
+    const toTarget = lightFrameTarget(to, light.target);
+    const target = fromTarget && toTarget ? lerpVec3(fromTarget, toTarget, t) : fromTarget ?? toTarget;
+    return {
+      ...structuredClone(light),
+      position: lerpVec3(from.position, to.position, t),
+      target: target ? { ...target } : undefined,
+      intensity: lerp(from.intensity ?? light.intensity, to.intensity ?? light.intensity, t),
+      colorTemperatureK: lerp(from.colorTemperatureK ?? light.colorTemperatureK, to.colorTemperatureK ?? light.colorTemperatureK, t),
+    };
+  }
+  return structuredClone(light);
 }
