@@ -23,16 +23,18 @@ Exit criteria: a director can stage and previs a complete dialogue/action shot w
 
 Acceptance passed on `main`: Windows + Ubuntu CI matrix, static quality audit, Windows compatibility audit, regression tests, and production build.
 
-## Gate 2 — editorial and sound (next)
-- [ ] deterministic timeline engine
-- [ ] waveform-backed dialogue/music/SFX/ambience tracks
-- [ ] frame-accurate markers and notes
-- [ ] animatic/reference MP4 export
-- [ ] OTIO import/export
+## Gate 2 — editorial and sound (completion candidate)
+- [x] deterministic timeline engine
+- [x] waveform-backed dialogue/music/SFX/ambience tracks
+- [x] frame-accurate markers and notes
+- [x] animatic/reference H.264/AAC MP4 export
+- [x] OTIO import/export
 
 Exit criteria: reference export is frame deterministic and editorial round-trip is tested.
 
-## Gate 3 — collaboration and review
+Gate 2 becomes complete only after the implementation PR and its merged `main` commit both pass the Windows + Ubuntu CI matrix.
+
+## Gate 3 — collaboration and review (next)
 - [ ] authenticated projects, roles and permissions
 - [ ] presence, object ownership and Shot locks
 - [ ] immutable versions, comments, frame annotations, WIP/Review/Approved
