@@ -4,7 +4,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { useDirectorStore } from '../store/directorStore';
 import { focalLengthToVerticalFovDeg } from '../utils/math';
-import { sampleActorTransform, sampleCamera } from '../utils/animation';
+import { sampleActorTransform, sampleCamera, sampleLight } from '../utils/animation';
 import { resolvePoseDefinition } from '../domain/poseLibrary';
 import type { Actor, DirectorLight, Vec3 } from '../domain/model';
 
@@ -315,7 +315,8 @@ export function DirectorViewport() {
       r.actorObjects.set(actor.id, group);
     });
 
-    shot.lights.forEach((l) => {
+    shot.lights.forEach((source) => {
+      const l = sampleLight(source, playhead);
       const color = tempToColor(l.colorTemperatureK, l.color);
       let light: THREE.Light;
       if (l.type === 'ambient') light = new THREE.AmbientLight(color, l.intensity);
@@ -326,9 +327,7 @@ export function DirectorViewport() {
         r.content.add(spot.target);
         light = spot;
       } else if (l.type === 'area') {
-        const area = new THREE.RectAreaLight(color, l.intensity, 2, 1);
-        area.lookAt(l.target?.x ?? 0, l.target?.y ?? 1, l.target?.z ?? 0);
-        light = area;
+        light = new THREE.RectAreaLight(color, l.intensity, 2, 1);
       } else {
         const directional = new THREE.DirectionalLight(color, l.intensity);
         directional.target.position.set(l.target?.x ?? 0, l.target?.y ?? 1, l.target?.z ?? 0);
@@ -336,12 +335,13 @@ export function DirectorViewport() {
         light = directional;
       }
       light.position.set(l.position.x, l.position.y, l.position.z);
+      if (l.type === 'area' && l.target) light.lookAt(l.target.x, l.target.y, l.target.z);
       light.castShadow = l.castShadow;
       r.content.add(light);
       if (l.type !== 'ambient') {
         const marker = buildLightMarker(l, color);
         r.content.add(marker);
-        r.lightObjects.set(l.id, marker);
+        r.lightObjects.set(source.id, marker);
       }
     });
 
