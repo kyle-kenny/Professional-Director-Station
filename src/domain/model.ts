@@ -10,6 +10,26 @@ export const transformSchema = z.object({
 });
 export type Transform = z.infer<typeof transformSchema>;
 
+export const easingSchema = z.enum(['linear', 'ease-in', 'ease-out', 'ease-in-out']);
+export type Easing = z.infer<typeof easingSchema>;
+
+export const actorKeyframeSchema = z.object({
+  time: z.number().nonnegative(),
+  position: vec3Schema,
+  rotation: vec3Schema.optional(),
+  easing: easingSchema.default('ease-in-out'),
+});
+export type ActorKeyframe = z.infer<typeof actorKeyframeSchema>;
+
+export const cameraKeyframeSchema = z.object({
+  time: z.number().nonnegative(),
+  position: vec3Schema,
+  target: vec3Schema,
+  focalLengthMm: z.number().min(8).max(1200).optional(),
+  easing: easingSchema.default('ease-in-out'),
+});
+export type CameraKeyframe = z.infer<typeof cameraKeyframeSchema>;
+
 export const assetRefSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
@@ -40,7 +60,7 @@ export const actorSchema = z.object({
   pose: z.string().default('neutral-standing'),
   action: z.string().default('idle'),
   lookAt: vec3Schema.optional(),
-  path: z.array(z.object({ time: z.number().nonnegative(), position: vec3Schema })).default([]),
+  path: z.array(actorKeyframeSchema).default([]),
   asset: assetRefSchema.optional(),
 });
 export type Actor = z.infer<typeof actorSchema>;
@@ -54,7 +74,7 @@ export const cameraSchema = z.object({
   sensorWidthMm: z.number().positive().default(36),
   aperture: z.number().positive().default(2.8),
   focusDistanceM: z.number().positive().default(3),
-  path: z.array(z.object({ time: z.number().nonnegative(), position: vec3Schema, target: vec3Schema })).default([]),
+  path: z.array(cameraKeyframeSchema).default([]),
 });
 export type ShotCamera = z.infer<typeof cameraSchema>;
 
