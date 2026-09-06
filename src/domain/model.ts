@@ -112,6 +112,7 @@ export const shotSchema = z.object({
   script: z.string().default(''),
   actors: z.array(actorSchema),
   camera: cameraSchema,
+  exposureEv: z.number().min(-8).max(8).default(0),
   lights: z.array(lightSchema),
   audio: z.array(audioClipSchema),
   notes: z.array(z.object({ id: z.string(), author: z.string(), time: z.number().nonnegative(), text: z.string() })).default([]),
