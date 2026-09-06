@@ -119,7 +119,7 @@ export function AssetLibraryPanel() {
     <div className="section-title">ASSET INGEST · GLB / FBX</div>
     <label className="asset-file-picker">
       <span>{file ? file.name : '选择 GLB / FBX…'}</span>
-      <input type="file" accept=".glb,.fbx,model/gltf-binary,application/octet-stream" onChange={(event) => void chooseFile(event.target.files?.[0])} />
+      <input type="file" accept=".glb,.fbx,model/gltf-binary,application/octet-stream" onChange={(event) => { const selected = event.currentTarget.files?.[0]; event.currentTarget.value = ''; void chooseFile(selected); }} />
     </label>
 
     {file && <div className="asset-form">
