@@ -1,15 +1,15 @@
 import fs from 'node:fs';
 
 const required = {
-  'src/domain/ai.ts': ['script-breakdown', 'storyboard', 'video', 'pds-http', 'local-structural', 'sourceShotHashSha256', 'controlHashSha256'],
+  'src/domain/ai.ts': ['script-breakdown', 'storyboard', 'video', 'pds-http', 'local-structural', 'sourceShotHashSha256', 'controlHashSha256', 'AI endpoints must use HTTPS'],
   'src/ai/scriptBreakdown.ts': ['breakDownScript', 'sourceScriptHashSha256'],
   'src/ai/controlAnalysis.ts': ['pds-ai-controls-1', 'cameraReference', 'pose:', 'depth:', 'lineart:', 'controlBundleHash'],
-  'src/ai/generation.ts': ['pds-ai-generation-1', 'generateLocalStructuralStoryboard', 'invokePdsAiEndpoint', 'runtimeToken', 'promptHashSha256'],
-  'src/ai/provenance.ts': ['approveGeneratedMedia', 'approvedGeneratedMediaToAsset', "source: 'generated'"],
+  'src/ai/generation.ts': ['pds-ai-generation-1', 'generateLocalStructuralStoryboard', 'invokePdsAiEndpoint', 'runtimeToken', 'promptHashSha256', 'controlSequence', 'failedGenerationRecord', '256 MiB safety limit'],
+  'src/ai/provenance.ts': ['approveGeneratedMedia', 'approvedGeneratedMediaToAsset', "source: 'generated'", 'sourceShotHashSha256'],
   'src/storage/aiMediaStore.ts': ['pds://ai/', 'putAiGeneratedMedia'],
-  'src/store/aiRegistry.ts': ['runScriptBreakdown', 'generateAiMedia', 'approveAiOutput', 'promoteApprovedAiOutputToAsset'],
+  'src/store/aiRegistry.ts': ['runScriptBreakdown', 'generateAiMedia', 'failedGenerationRecord', 'approveAiOutput', 'promoteApprovedAiOutputToAsset'],
   'src/components/AIWorkspace.tsx': ['STRUCTURE ANALYSIS', 'MODEL PROFILE / GENERATION', 'GENERATED MEDIA / APPROVAL', 'runtimeToken'],
-  'src/tests/aiProduction.test.ts': ['Approved source Shot', 'runtime-secret', 'local-structural-v1'],
+  'src/tests/aiProduction.test.ts': ['Approved source Shot', 'runtime-secret', 'controlSequence', 'failed attempts', 'local-structural-v1'],
 };
 const failures = [];
 for (const [file, needles] of Object.entries(required)) {
@@ -19,6 +19,11 @@ for (const [file, needles] of Object.entries(required)) {
 }
 const model = fs.readFileSync('src/domain/model.ts', 'utf8');
 for (const contract of ['ai: aiProductionStateSchema', "'storyboard'", "'video'", "'ai'"]) if (!model.includes(contract)) failures.push(`model missing ${contract}`);
+const workflow = fs.readFileSync('.github/workflows/ci.yml', 'utf8');
+if (!workflow.includes('audit:ai')) failures.push('CI missing Gate 5 AI audit');
+const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+if (!pkg.scripts?.['audit:ai']) failures.push('package.json missing audit:ai');
+if (!String(pkg.scripts?.check ?? '').includes('audit:ai')) failures.push('check script does not include audit:ai');
 if (failures.length) {
   console.error('PDS Gate 5 AI production smoke FAILED');
   failures.forEach((failure) => console.error(` - ${failure}`));
