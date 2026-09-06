@@ -4,6 +4,7 @@ import App from './App';
 import './styles.css';
 import './editorial.css';
 import './review.css';
+import './pipeline.css';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

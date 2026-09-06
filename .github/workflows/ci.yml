@@ -18,5 +18,6 @@ jobs:
       - run: npm run audit:static
       - run: npm run audit:windows
       - run: npm run audit:collab
+      - run: npm run audit:pipeline
       - run: npm test
       - run: npm run build

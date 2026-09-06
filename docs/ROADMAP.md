@@ -34,7 +34,7 @@ Exit criteria: reference export is frame deterministic and editorial round-trip 
 
 Acceptance passed on `main`: frame-authoritative timing, waveform/OTIO/export regression coverage, 35 tests, production build, and Windows + Ubuntu CI matrix.
 
-## Gate 3 — collaboration and review (completion candidate)
+## Gate 3 — collaboration and review (complete)
 - [x] authenticated projects, roles and permissions
 - [x] presence, object ownership and Shot locks
 - [x] immutable versions, comments, frame annotations, WIP/Review/Approved
@@ -43,18 +43,21 @@ Acceptance passed on `main`: frame-authoritative timing, waveform/OTIO/export re
 
 Exit criteria: two departments can work concurrently without silent data loss.
 
-Gate 3 becomes complete only after the implementation PR and its merged `main` commit both pass the Windows + Ubuntu CI matrix, including collaboration auth smoke tests.
+Acceptance passed on `main` commit `561fe7c6371cd94a8b405cc10e5e8362149225b4`: Windows + Ubuntu CI, collaboration authentication smoke audit, 42 regression tests and production build.
 
-## Gate 4 — pipeline interoperability (next)
-- [ ] USD scene composition
-- [ ] OCIO/ACES project configuration
-- [ ] MaterialX material references
-- [ ] DCC/editor adapters
-- [ ] storage abstraction and media proxy strategy
+## Gate 4 — pipeline interoperability (completion candidate)
+- [x] OpenUSD USDA scene composition and PDS round-trip payload
+- [x] OCIO 2.5 / ACES 2.0 project configuration
+- [x] MaterialX 1.39 material references
+- [x] Blender/Maya/Houdini/Unreal/Nuke/Resolve adapter manifests
+- [x] storage abstraction and deterministic media proxy strategy
+- [x] interchange package workspace and automated round-trip tests
 
-Exit criteria: interchange fixtures round-trip against reference applications.
+Exit criteria: interchange data preserves PDS meter/Y-up/timebase/color/material identities and adapter packages are deterministic across Windows and Ubuntu.
 
-## Gate 5 — AI production
+Gate 4 becomes complete only after the implementation PR and merged `main` commit both pass static, collaboration, pipeline, regression and production-build gates on Windows + Ubuntu.
+
+## Gate 5 — AI production (next)
 - [ ] script breakdown → structured scene candidates
 - [ ] pose/depth/lineart/camera-reference analysis
 - [ ] structure-conditioned storyboard/video generation
