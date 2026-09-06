@@ -19,5 +19,6 @@ jobs:
       - run: npm run audit:windows
       - run: npm run audit:collab
       - run: npm run audit:pipeline
+      - run: npm run audit:ai
       - run: npm test
       - run: npm run build
