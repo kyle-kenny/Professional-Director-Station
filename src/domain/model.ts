@@ -122,8 +122,30 @@ export const audioClipSchema = z.object({
   duration: z.number().positive(),
   gainDb: z.number().min(-96).max(24).default(0),
   uri: z.string().default(''),
+  sourceFileName: z.string().min(1).optional(),
+  sourceSizeBytes: z.number().int().nonnegative().optional(),
+  mimeType: z.string().optional(),
+  sampleRate: z.number().int().positive().optional(),
+  channels: z.number().int().min(1).max(32).optional(),
+  waveformKey: z.string().min(1).optional(),
 });
 export type AudioClip = z.infer<typeof audioClipSchema>;
+
+export const timelineMarkerSchema = z.object({
+  id: z.string().min(1),
+  time: z.number().nonnegative(),
+  label: z.string().min(1),
+  color: z.enum(['blue', 'amber', 'red', 'green', 'violet']).default('amber'),
+});
+export type TimelineMarker = z.infer<typeof timelineMarkerSchema>;
+
+export const shotNoteSchema = z.object({
+  id: z.string().min(1),
+  author: z.string().min(1),
+  time: z.number().nonnegative(),
+  text: z.string().min(1),
+});
+export type ShotNote = z.infer<typeof shotNoteSchema>;
 
 export const shotSchema = z.object({
   id: z.string(),
@@ -138,7 +160,8 @@ export const shotSchema = z.object({
   exposureEv: z.number().min(-8).max(8).default(0),
   lights: z.array(lightSchema),
   audio: z.array(audioClipSchema),
-  notes: z.array(z.object({ id: z.string(), author: z.string(), time: z.number().nonnegative(), text: z.string() })).default([]),
+  markers: z.array(timelineMarkerSchema).default([]),
+  notes: z.array(shotNoteSchema).default([]),
 });
 export type Shot = z.infer<typeof shotSchema>;
 
