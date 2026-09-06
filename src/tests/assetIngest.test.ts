@@ -100,7 +100,7 @@ describe('Gate 1 asset ingest', () => {
   });
 
   it('keeps legacy project asset refs parseable through diagnostics defaults', () => {
-    const legacy = createDefaultProject() as ReturnType<typeof createDefaultProject> & { assets: any[] };
+    const legacy: any = JSON.parse(JSON.stringify(createDefaultProject()));
     legacy.assets = [{ id: 'legacy-prop', name: 'Legacy Prop', category: 'prop', version: 'v001', uri: 'assets/legacy-prop/v001/source.glb', license: 'unknown', owner: 'project', unitScaleMeters: 1 }];
     const parsed = projectSchema.parse(legacy);
     expect(parsed.assets[0].diagnostics).toEqual([]);
