@@ -3,6 +3,7 @@ import { createDefaultProject } from '../domain/defaultProject';
 import { createActorFromPreset } from '../domain/actorLibrary';
 import { createActorMotionPath, motionPresetList } from '../domain/actorMotions';
 import { posePresetList, resolvePoseDefinition } from '../domain/poseLibrary';
+import { directorSkeletonContract, validateSkeletonMapping } from '../domain/skeletonContract';
 import { projectSchema } from '../domain/model';
 
 describe('Gate 1 director interaction contracts', () => {
@@ -36,6 +37,20 @@ describe('Gate 1 director interaction contracts', () => {
     expect(createActorMotionPath(actor, duration, 'retreat').at(-1)?.position.z).toBeCloseTo(1.5, 6);
     expect(createActorMotionPath(actor, duration, 'cross-left').at(-1)?.position.x).toBeCloseTo(-2, 6);
     expect(createActorMotionPath(actor, duration, 'cross-right').at(-1)?.position.x).toBeCloseTo(2, 6);
+  });
+
+  it('defines a stable right-handed humanoid retarget contract', () => {
+    expect(directorSkeletonContract.id).toBe('pds-humanoid-1');
+    expect(directorSkeletonContract.upAxis).toBe('Y');
+    expect(directorSkeletonContract.forwardAxis).toBe('-Z');
+    const valid = {
+      hips: 'Hips', spine: 'Spine', head: 'Head',
+      leftUpperArm: 'LeftArm', rightUpperArm: 'RightArm',
+      leftUpperLeg: 'LeftUpLeg', rightUpperLeg: 'RightUpLeg',
+    };
+    expect(validateSkeletonMapping(valid)).toEqual([]);
+    expect(validateSkeletonMapping({ hips: 'Hips' })).toContain('missing required joint: spine');
+    expect(validateSkeletonMapping({ ...valid, rightUpperArm: 'LeftArm' })).toContain('one source bone cannot map to multiple director joints');
   });
 
   it('defaults legacy projects to neutral exposure and rejects unsafe EV ranges', () => {
