@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { AssetRef } from '../domain/model';
+import { createDefaultProject } from '../domain/defaultProject';
+import { projectSchema, type AssetRef } from '../domain/model';
 import { assetBinaryKey } from '../storage/assetBinaryStore';
 import { uniqueAssetId, validateProjectAssetCandidate } from '../store/assetRegistry';
 import {
@@ -35,7 +36,7 @@ function createMinimalGlb(): ArrayBuffer {
 
 function createAsciiFbx(): ArrayBuffer {
   const source = `; FBX 7.4.0 project file\nFBXHeaderExtension: {\n FBXVersion: 7400\n}\nGlobalSettings: {\n UnitScaleFactor: 1\n}\n`;
-  return new TextEncoder().encode(source).buffer;
+  return new TextEncoder().encode(source).buffer as ArrayBuffer;
 }
 
 const registration = {
@@ -96,5 +97,12 @@ describe('Gate 1 asset ingest', () => {
     const existing = [{ ...buildNormalizedAssetRef(registration, inspectAssetBuffer('hero.glb', createMinimalGlb())), id: 'hero-character' }] as AssetRef[];
     expect(uniqueAssetId('hero-character', existing)).toBe('hero-character-2');
     expect(() => validateProjectAssetCandidate(existing[0], existing)).toThrow(/已存在/);
+  });
+
+  it('keeps legacy project asset refs parseable through diagnostics defaults', () => {
+    const legacy = createDefaultProject() as ReturnType<typeof createDefaultProject> & { assets: any[] };
+    legacy.assets = [{ id: 'legacy-prop', name: 'Legacy Prop', category: 'prop', version: 'v001', uri: 'assets/legacy-prop/v001/source.glb', license: 'unknown', owner: 'project', unitScaleMeters: 1 }];
+    const parsed = projectSchema.parse(legacy);
+    expect(parsed.assets[0].diagnostics).toEqual([]);
   });
 });
