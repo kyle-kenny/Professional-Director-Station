@@ -90,8 +90,23 @@ export function DirectorViewport() {
   const shot = useDirectorStore((s) => s.getActiveShot());
   const selectedObjectId = useDirectorStore((s) => s.selectedObjectId);
   const selectObject = useDirectorStore((s) => s.selectObject);
+  const transformMode = useDirectorStore((s) => s.transformMode);
+  const setTransformMode = useDirectorStore((s) => s.setTransformMode);
 
   useEffect(() => { viewModeRef.current = viewMode; }, [viewMode]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const editable = target?.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName ?? '');
+      if (editable || event.ctrlKey || event.metaKey || event.altKey) return;
+      if (event.key.toLowerCase() === 'w') setTransformMode('translate');
+      else if (event.key.toLowerCase() === 'e') setTransformMode('rotate');
+      else if (event.key.toLowerCase() === 'r') setTransformMode('scale');
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [setTransformMode]);
 
   useEffect(() => {
     if (!mountRef.current) return;
@@ -118,6 +133,8 @@ export function DirectorViewport() {
     transform.setMode('translate');
     transform.setSpace('world');
     transform.setTranslationSnap(0.05);
+    transform.setRotationSnap(THREE.MathUtils.degToRad(15));
+    transform.setScaleSnap(0.05);
     transform.setSize(0.85);
     scene.add(transform.getHelper());
 
@@ -164,7 +181,11 @@ export function DirectorViewport() {
       const object = transform.object;
       const actorId = object?.userData.actorId as string | undefined;
       if (!object || !actorId) return;
-      useDirectorStore.getState().setActorPosition(actorId, { x: object.position.x, y: object.position.y, z: object.position.z });
+      useDirectorStore.getState().setActorTransform(actorId, {
+        position: { x: object.position.x, y: object.position.y, z: object.position.z },
+        rotation: { x: object.rotation.x, y: object.rotation.y, z: object.rotation.z },
+        scale: { x: object.scale.x, y: object.scale.y, z: object.scale.z },
+      });
     };
     transform.addEventListener('mouseUp', onTransformEnd);
 
@@ -193,6 +214,13 @@ export function DirectorViewport() {
       runtime.current = null;
     };
   }, [selectObject]);
+
+  useEffect(() => {
+    const r = runtime.current;
+    if (!r) return;
+    r.transform.setMode(transformMode);
+    r.transform.setSpace(transformMode === 'translate' ? 'world' : 'local');
+  }, [transformMode]);
 
   useEffect(() => {
     const r = runtime.current;
@@ -262,7 +290,10 @@ export function DirectorViewport() {
       <span className="chip">3D Blocking / Previs</span>
       <button className={viewMode === 'director' ? 'active' : ''} onClick={() => setViewMode('director')}>导演视图</button>
       <button className={viewMode === 'shot' ? 'active' : ''} onClick={() => setViewMode('shot')}>镜头视图</button>
-      <span>移动 Gizmo · 5cm Snap</span>
+      <button className={transformMode === 'translate' ? 'active' : ''} onClick={() => setTransformMode('translate')} title="W">移动 W</button>
+      <button className={transformMode === 'rotate' ? 'active' : ''} onClick={() => setTransformMode('rotate')} title="E">旋转 E</button>
+      <button className={transformMode === 'scale' ? 'active' : ''} onClick={() => setTransformMode('scale')} title="R">缩放 R</button>
+      <span>5cm · 15° · 5% Snap</span>
       <span className="lens-readout">{shot.camera.focalLengthMm}mm · f/{shot.camera.aperture}</span>
     </div>
     <div className="viewport" ref={mountRef} />
