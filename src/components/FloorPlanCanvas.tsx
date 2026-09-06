@@ -67,8 +67,19 @@ export function FloorPlanCanvas() {
 
       shot.lights.filter((l) => l.type !== 'ambient').forEach((l) => {
         const p = world(l.position.x, l.position.z, w, h);
-        ctx.strokeStyle = '#ffe19a'; ctx.lineWidth = 2; ctx.strokeRect(p.x - 8, p.y - 8, 16, 16);
-        ctx.fillStyle = '#ffe19a'; ctx.font = '11px sans-serif'; ctx.fillText(l.name, p.x + 12, p.y + 4);
+        const isSelected = l.id === selected;
+        ctx.strokeStyle = isSelected ? '#ffd166' : '#ffe19a';
+        ctx.fillStyle = isSelected ? 'rgba(255,209,102,.22)' : 'rgba(255,225,154,.08)';
+        ctx.lineWidth = isSelected ? 3 : 2;
+        ctx.fillRect(p.x - 9, p.y - 9, 18, 18);
+        ctx.strokeRect(p.x - 9, p.y - 9, 18, 18);
+        ctx.fillStyle = isSelected ? '#ffd166' : '#ffe19a'; ctx.font = '11px sans-serif'; ctx.fillText(l.name, p.x + 13, p.y + 4);
+        if (isSelected && l.target) {
+          const target = world(l.target.x, l.target.z, w, h);
+          ctx.setLineDash([5, 4]);
+          ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(target.x, target.y); ctx.stroke();
+          ctx.setLineDash([]);
+        }
       });
     };
     resize();
@@ -83,6 +94,10 @@ export function FloorPlanCanvas() {
       const transform = sampleActorTransform(actor, playhead);
       const x = rect.width / 2 + transform.position.x * SCALE, y = rect.height / 2 + transform.position.z * SCALE;
       if (Math.hypot(mx - x, my - y) < 22) { select(actor.id); return; }
+    }
+    for (const light of shot.lights.filter((item) => item.type !== 'ambient')) {
+      const x = rect.width / 2 + light.position.x * SCALE, y = rect.height / 2 + light.position.z * SCALE;
+      if (Math.abs(mx - x) < 18 && Math.abs(my - y) < 18) { select(light.id); return; }
     }
   };
 
