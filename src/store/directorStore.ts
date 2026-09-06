@@ -1,12 +1,12 @@
 import { create } from 'zustand';
-import { projectSchema, type Actor, type CameraKeyframe, type DirectorProject, type Shot, type Transform, type Vec3, type WorkspaceMode } from '../domain/model';
+import { projectSchema, type Actor, type CameraKeyframe, type DirectorLight, type DirectorProject, type LightKeyframe, type Shot, type Transform, type Vec3, type WorkspaceMode } from '../domain/model';
 import { createDefaultProject } from '../domain/defaultProject';
 import { lightingPresets, type LightingPresetId } from '../domain/presets';
 import { createActorFromPreset, type ActorPresetId } from '../domain/actorLibrary';
 import { createCameraRigPath, type CameraRigPresetId } from '../domain/cameraRigs';
 import { createActorMotionPath, type MotionPresetId } from '../domain/actorMotions';
 import { poseLibrary, type PosePresetId } from '../domain/poseLibrary';
-import { sampleActorTransform, sampleCamera } from '../utils/animation';
+import { sampleActorTransform, sampleCamera, sampleLight } from '../utils/animation';
 import { recordProjectHistory, redoProjectHistory, undoProjectHistory } from './projectHistory';
 
 const STORAGE_KEY = 'pds.project.v1';
@@ -64,6 +64,8 @@ type State = {
   updateLight: (lightId: string, field: 'intensity' | 'colorTemperatureK', value: number) => void;
   updateLightVector: (lightId: string, field: 'position' | 'target', axis: keyof Vec3, value: number) => void;
   setLightPosition: (lightId: string, position: Vec3) => void;
+  addLightKeyframe: (lightId: string) => void;
+  removeLightKeyframe: (lightId: string, time: number) => void;
   setLightCastShadow: (lightId: string, value: boolean) => void;
   setExposureEv: (value: number) => void;
   setShotStatus: (status: Shot['status']) => void;
@@ -122,6 +124,23 @@ function upsertCameraKeyframe(shot: Shot, time: number, camera: CameraKeyframe) 
   if (existing) Object.assign(existing, frame);
   else shot.camera.path.push(frame);
   shot.camera.path.sort((a, b) => a.time - b.time);
+}
+
+function upsertLightKeyframe(light: DirectorLight, shot: Shot, time: number, sampled: DirectorLight) {
+  const snapped = snapShotTime(time, shot);
+  const tolerance = 0.5 / shot.fps;
+  const existing = light.path.find((frame) => Math.abs(frame.time - snapped) <= tolerance);
+  const frame: LightKeyframe = {
+    time: snapped,
+    position: { ...sampled.position },
+    target: sampled.target ? { ...sampled.target } : undefined,
+    intensity: sampled.intensity,
+    colorTemperatureK: sampled.colorTemperatureK,
+    easing: existing?.easing ?? 'ease-in-out',
+  };
+  if (existing) Object.assign(existing, frame);
+  else light.path.push(frame);
+  light.path.sort((a, b) => a.time - b.time);
 }
 
 function commitActive(state: State, fn: (shot: Shot) => void): Pick<State, 'project' | 'undoStack' | 'redoStack'> {
@@ -239,13 +258,23 @@ export const useDirectorStore = create<State>((set, get) => ({
   updateLight: (lightId, field, value) => set((state) => commitActive(state, (shot) => {
     const light = shot.lights.find((item) => item.id === lightId);
     if (!light) return;
-    if (field === 'intensity') light.intensity = Math.max(0, value);
-    else light.colorTemperatureK = Math.min(20000, Math.max(1000, value));
+    const safeValue = field === 'intensity' ? Math.max(0, value) : Math.min(20000, Math.max(1000, value));
+    if (light.path.length > 0) {
+      const sampled = sampleLight(light, state.playhead);
+      sampled[field] = safeValue;
+      upsertLightKeyframe(light, shot, state.playhead, sampled);
+    } else light[field] = safeValue;
   })),
   updateLightVector: (lightId, field, axis, value) => set((state) => commitActive(state, (shot) => {
     const light = shot.lights.find((item) => item.id === lightId);
     if (!light) return;
-    if (field === 'position') light.position[axis] = value;
+    if (light.path.length > 0) {
+      const sampled = sampleLight(light, state.playhead);
+      if (field === 'target' && !sampled.target) sampled.target = { x: 0, y: 1.2, z: 0 };
+      const vector = field === 'position' ? sampled.position : sampled.target!;
+      vector[axis] = value;
+      upsertLightKeyframe(light, shot, state.playhead, sampled);
+    } else if (field === 'position') light.position[axis] = value;
     else {
       if (!light.target) light.target = { x: 0, y: 1.2, z: 0 };
       light.target[axis] = value;
@@ -253,7 +282,24 @@ export const useDirectorStore = create<State>((set, get) => ({
   })),
   setLightPosition: (lightId, position) => set((state) => commitActive(state, (shot) => {
     const light = shot.lights.find((item) => item.id === lightId);
-    if (light) light.position = { ...position };
+    if (!light) return;
+    if (light.path.length > 0) {
+      const sampled = sampleLight(light, state.playhead);
+      sampled.position = { ...position };
+      upsertLightKeyframe(light, shot, state.playhead, sampled);
+    } else light.position = { ...position };
+  })),
+  addLightKeyframe: (lightId) => set((state) => commitActive(state, (shot) => {
+    const light = shot.lights.find((item) => item.id === lightId);
+    if (!light) return;
+    upsertLightKeyframe(light, shot, state.playhead, sampleLight(light, state.playhead));
+  })),
+  removeLightKeyframe: (lightId, time) => set((state) => commitActive(state, (shot) => {
+    const light = shot.lights.find((item) => item.id === lightId);
+    if (!light) return;
+    const snapped = snapShotTime(time, shot);
+    const tolerance = 0.5 / shot.fps;
+    light.path = light.path.filter((frame) => Math.abs(frame.time - snapped) > tolerance);
   })),
   setLightCastShadow: (lightId, value) => set((state) => commitActive(state, (shot) => {
     const light = shot.lights.find((item) => item.id === lightId);
