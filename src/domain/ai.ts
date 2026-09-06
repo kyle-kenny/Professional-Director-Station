@@ -14,6 +14,17 @@ export const aiModelProfileSchema = z.object({
   tasks: z.array(aiTaskSchema).min(1),
   defaultParameters: z.record(z.string(), scalarSchema).default({}),
   enabled: z.boolean().default(true),
+}).superRefine((profile, ctx) => {
+  if (profile.provider === 'pds-http' && !profile.endpoint) {
+    ctx.addIssue({ code: 'custom', path: ['endpoint'], message: 'pds-http profiles require an endpoint.' });
+    return;
+  }
+  if (!profile.endpoint) return;
+  const url = new URL(profile.endpoint);
+  const local = ['localhost', '127.0.0.1', '::1'].includes(url.hostname);
+  if (url.protocol !== 'https:' && !(local && url.protocol === 'http:')) {
+    ctx.addIssue({ code: 'custom', path: ['endpoint'], message: 'AI endpoints must use HTTPS except localhost development endpoints.' });
+  }
 });
 export type AiModelProfile = z.infer<typeof aiModelProfileSchema>;
 
