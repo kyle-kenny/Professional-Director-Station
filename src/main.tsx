@@ -5,6 +5,7 @@ import './styles.css';
 import './editorial.css';
 import './review.css';
 import './pipeline.css';
+import './ai.css';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
