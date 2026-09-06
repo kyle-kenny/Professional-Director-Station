@@ -250,10 +250,7 @@ export function DirectorViewport() {
           scale: { x: object.scale.x, y: object.scale.y, z: object.scale.z },
         });
       } else if (lightId) {
-        const store = useDirectorStore.getState();
-        store.updateLightVector(lightId, 'position', 'x', object.position.x);
-        store.updateLightVector(lightId, 'position', 'y', object.position.y);
-        store.updateLightVector(lightId, 'position', 'z', object.position.z);
+        useDirectorStore.getState().setLightPosition(lightId, { x: object.position.x, y: object.position.y, z: object.position.z });
       }
     };
     transform.addEventListener('mouseUp', onTransformEnd);
