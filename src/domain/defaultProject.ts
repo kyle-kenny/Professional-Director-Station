@@ -28,6 +28,7 @@ export const createDefaultProject = (): DirectorProject => ({
       exposureEv: 0,
       lights: lightingPresets.neutral.lights,
       audio: [],
+      markers: [],
       notes: [],
     }],
   }],
