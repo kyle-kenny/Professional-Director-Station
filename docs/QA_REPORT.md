@@ -2,7 +2,7 @@
 
 Date: 2026-09-06
 
-## Verified in this build environment
+## Verified
 
 - PASS — required architecture/file inventory
 - PASS — fixed production coordinate contract (right-handed, Y-up, -Z forward, meters)
@@ -11,24 +11,35 @@ Date: 2026-09-06
 - PASS — 2D floor plan includes camera cone and 180-degree action axis
 - PASS — 2D director frame derives composition from the 3D camera geometry
 - PASS — current Shot schema covers blocking, camera, lighting, audio, review status and version
-- PASS — static quality gate executes with zero third-party dependencies
-- PASS — TransformControls implementation follows current Three.js addon API
-- PASS — Windows compatibility static scanner
+- PASS — static quality gate
+- PASS — TransformControls integration
+- PASS — Windows compatibility scanner
 - PASS — standard cast covers male/female × child/teen/adult/elderly
-- PASS — GitHub write access verified against `kyle-kenny/Professional-Director-Station`
+- PASS — GitHub write access and main-branch delivery
 
-Local zero-dependency gates:
+## GitHub CI verification
 
-```bash
-npm run audit:static
-npm run audit:windows
-```
+The first production CI run exposed two TypeScript 7 build-contract defects: missing Vite CSS side-effect type declarations and an invalid `allowImportingTsExtensions` configuration. Both were fixed in commit `1c8dff38c1df98d20cdf48cf4b1d736c6256416f`.
 
-## CI-dependent verification
+CI run `34036650094` then completed successfully on both runners:
 
-The provided execution container could not complete `npm install` because outbound npm registry access timed out. Therefore this report does **not** claim local `vitest` or `vite build` success.
+### Ubuntu
 
-GitHub Actions is configured to run on both `ubuntu-latest` and `windows-latest` and must execute install → static gate → Windows gate → unit tests → production build. A release is not accepted until these checks are green.
+- PASS — npm install
+- PASS — static quality gate
+- PASS — Windows compatibility gate
+- PASS — Vitest: 6/6 tests
+- PASS — production build
+
+### Windows
+
+- PASS — npm install
+- PASS — static quality gate
+- PASS — Windows compatibility gate
+- PASS — Vitest: 6/6 tests
+- PASS — production build
+
+This establishes Windows 11 as an actively tested platform rather than a documentation-only claim.
 
 ## Windows acceptance baseline
 
