@@ -53,6 +53,6 @@ Gate 2 turns the blocking/previs station into a frame-deterministic editorial an
 - [x] OTIO import/export and frame round-trip tests
 - [x] old `pds-1` project compatibility
 - [x] PR head passes Ubuntu + Windows static audit, 35 regression tests and production build
-- [ ] merged `main` commit passes the same Ubuntu + Windows matrix
+- [x] merged `main` commit passes the same Ubuntu + Windows matrix
 
-Gate 2 is complete only when both CI conditions above are satisfied.
+Gate 2 is complete. The implementation is accepted on `main` with static industrial audit, Windows compatibility audit, 35 regression tests, production build, and Windows + Ubuntu CI all passing.
