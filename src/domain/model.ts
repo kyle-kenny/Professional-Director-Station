@@ -40,6 +40,13 @@ export const lightKeyframeSchema = z.object({
 });
 export type LightKeyframe = z.infer<typeof lightKeyframeSchema>;
 
+export const assetDiagnosticSchema = z.object({
+  severity: z.enum(['info', 'warning', 'error']),
+  code: z.string().min(1),
+  message: z.string().min(1),
+});
+export type AssetDiagnosticRecord = z.infer<typeof assetDiagnosticSchema>;
+
 export const assetRefSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
@@ -49,6 +56,11 @@ export const assetRefSchema = z.object({
   license: z.string().default('unknown'),
   owner: z.string().default('project'),
   unitScaleMeters: z.number().positive().default(1),
+  sourceFormat: z.enum(['glb', 'fbx']).optional(),
+  sourceFileName: z.string().min(1).optional(),
+  sourceSizeBytes: z.number().int().nonnegative().optional(),
+  sourceUnitScaleMeters: z.number().positive().optional(),
+  diagnostics: z.array(assetDiagnosticSchema).default([]),
 });
 export type AssetRef = z.infer<typeof assetRefSchema>;
 
@@ -153,4 +165,4 @@ export const projectSchema = z.object({
 });
 export type DirectorProject = z.infer<typeof projectSchema>;
 
-export type WorkspaceMode = '3d' | 'floorplan' | 'frame' | 'timeline';
+export type WorkspaceMode = '3d' | 'floorplan' | 'frame' | 'timeline' | 'assets';
