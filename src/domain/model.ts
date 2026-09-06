@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { projectCollaborationStateSchema } from './collaboration';
 import { pipelineConfigSchema } from './pipeline';
+import { aiProductionStateSchema } from './ai';
 
 export const vec3Schema = z.object({ x: z.number(), y: z.number(), z: z.number() });
 export type Vec3 = z.infer<typeof vec3Schema>;
@@ -21,7 +22,7 @@ export type AssetDiagnosticRecord = z.infer<typeof assetDiagnosticSchema>;
 export const assetProvenanceSchema = z.object({ source: z.enum(['import', 'generated', 'external', 'derived', 'unknown']).default('unknown'), sourceUri: z.string().optional(), recordedAt: z.string().optional(), recordedBy: z.string().optional(), parentAssetId: z.string().optional() }).default({ source: 'unknown' });
 export type AssetProvenance = z.infer<typeof assetProvenanceSchema>;
 export const assetRefSchema = z.object({
-  id: z.string().min(1), name: z.string().min(1), category: z.enum(['character', 'environment', 'prop', 'vehicle', 'camera', 'light', 'pose', 'motion', 'audio']), version: z.string().min(1), uri: z.string().min(1), license: z.string().default('unknown'), owner: z.string().default('project'), unitScaleMeters: z.number().positive().default(1), contentHashSha256: z.string().regex(/^[0-9a-f]{64}$/).optional(), provenance: assetProvenanceSchema, sourceFormat: z.enum(['glb', 'fbx']).optional(), sourceFileName: z.string().min(1).optional(), sourceSizeBytes: z.number().int().nonnegative().optional(), sourceUnitScaleMeters: z.number().positive().optional(), diagnostics: z.array(assetDiagnosticSchema).default([]),
+  id: z.string().min(1), name: z.string().min(1), category: z.enum(['character', 'environment', 'prop', 'vehicle', 'camera', 'light', 'pose', 'motion', 'audio', 'storyboard', 'video']), version: z.string().min(1), uri: z.string().min(1), license: z.string().default('unknown'), owner: z.string().default('project'), unitScaleMeters: z.number().positive().default(1), contentHashSha256: z.string().regex(/^[0-9a-f]{64}$/).optional(), provenance: assetProvenanceSchema, sourceFormat: z.enum(['glb', 'fbx']).optional(), sourceFileName: z.string().min(1).optional(), sourceSizeBytes: z.number().int().nonnegative().optional(), sourceUnitScaleMeters: z.number().positive().optional(), diagnostics: z.array(assetDiagnosticSchema).default([]),
 });
 export type AssetRef = z.infer<typeof assetRefSchema>;
 
@@ -47,7 +48,7 @@ export type Sequence = z.infer<typeof sequenceSchema>;
 export const projectSchema = z.object({
   schemaVersion: z.literal('pds-1'), id: z.string(), name: z.string(),
   coordinateConvention: z.object({ handedness: z.literal('right'), upAxis: z.literal('Y'), forwardAxis: z.literal('-Z'), linearUnit: z.literal('meter') }),
-  sequences: z.array(sequenceSchema), assets: z.array(assetRefSchema), collaboration: projectCollaborationStateSchema, pipeline: pipelineConfigSchema, updatedAt: z.string(),
+  sequences: z.array(sequenceSchema), assets: z.array(assetRefSchema), collaboration: projectCollaborationStateSchema, pipeline: pipelineConfigSchema, ai: aiProductionStateSchema, updatedAt: z.string(),
 });
 export type DirectorProject = z.infer<typeof projectSchema>;
-export type WorkspaceMode = '3d' | 'floorplan' | 'frame' | 'timeline' | 'assets' | 'review' | 'pipeline';
+export type WorkspaceMode = '3d' | 'floorplan' | 'frame' | 'timeline' | 'assets' | 'review' | 'pipeline' | 'ai';
