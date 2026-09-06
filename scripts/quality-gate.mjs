@@ -8,6 +8,7 @@ const required = [
   'src/domain/actorLibrary.ts',
   'src/domain/poseLibrary.ts',
   'src/domain/actorMotions.ts',
+  'src/domain/skeletonContract.ts',
   'src/engine/DirectorViewport.tsx',
   'src/components/FloorPlanCanvas.tsx',
   'src/components/DirectorFrameCanvas.tsx',
@@ -46,6 +47,9 @@ const motions = fs.readFileSync(path.join(root, 'src/domain/actorMotions.ts'), '
 for (const motion of ['walk-forward', 'retreat', 'cross-left', 'cross-right']) {
   if (!motions.includes(motion)) failures.push(`actor motion preset missing: ${motion}`);
 }
+const skeleton = fs.readFileSync(path.join(root, 'src/domain/skeletonContract.ts'), 'utf8');
+if (!skeleton.includes("id: 'pds-humanoid-1'")) failures.push('humanoid retarget contract id missing');
+if (!skeleton.includes("forwardAxis: '-Z'")) failures.push('humanoid retarget forward-axis contract missing');
 
 const ci = fs.readFileSync(path.join(root, '.github/workflows/ci.yml'), 'utf8');
 if (!ci.includes('windows-latest')) failures.push('Windows CI runner missing');
