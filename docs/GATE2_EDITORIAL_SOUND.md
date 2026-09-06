@@ -52,7 +52,7 @@ Gate 2 turns the blocking/previs station into a frame-deterministic editorial an
 - [x] H.264/AAC MP4 reference export path
 - [x] OTIO import/export and frame round-trip tests
 - [x] old `pds-1` project compatibility
-- [ ] PR head passes Ubuntu + Windows static audit, tests and production build
+- [x] PR head passes Ubuntu + Windows static audit, 35 regression tests and production build
 - [ ] merged `main` commit passes the same Ubuntu + Windows matrix
 
 Gate 2 is complete only when both CI conditions above are satisfied.
