@@ -2,7 +2,7 @@ import { AudioBufferSource, BufferTarget, CanvasSource, Mp4OutputFormat, Output,
 import type { Shot } from '../domain/model';
 import { renderDirectorFrame } from '../rendering/directorFrameRenderer';
 import { renderShotAudioMixdown } from '../audio/audioTransport';
-import { totalFrames } from './timelineEngine';
+import { buildReferenceExportPlan } from './referenceExportPlan';
 
 export type ReferenceExportOptions = {
   width?: number;
@@ -16,15 +16,7 @@ export type ReferenceExportResult = {
   frames: number;
 };
 
-export function buildReferenceExportPlan(shot: Shot) {
-  const frames = totalFrames(shot.duration, shot.fps);
-  return {
-    fps: shot.fps,
-    frames,
-    duration: frames / shot.fps,
-    timestamps: Array.from({ length: frames }, (_, frame) => frame / shot.fps),
-  };
-}
+export { buildReferenceExportPlan } from './referenceExportPlan';
 
 export async function exportShotReferenceMp4(shot: Shot, options: ReferenceExportOptions = {}): Promise<ReferenceExportResult> {
   if (typeof document === 'undefined') throw new Error('MP4 参考导出需要浏览器 Canvas 环境。');
