@@ -82,6 +82,26 @@ export function buildVideoControlSequence(shot: Shot, maxSamples = 120): AiContr
   return frames.map((frame) => analyzeFrameControls(shot, frame));
 }
 
+export function failedGenerationRecord(request: AiGenerationRequest, error: unknown, now = new Date().toISOString()): AiGeneratedMedia {
+  const message = error instanceof Error ? error.message : String(error || 'Unknown AI generation failure');
+  return {
+    id: `ai-failed-${request.task}-${request.source.shotId}-${Date.parse(now) || 0}-${request.controlHashSha256.slice(0, 8)}-${request.promptHashSha256.slice(0, 6)}`,
+    task: request.task,
+    status: 'failed',
+    sourceShotId: request.source.shotId,
+    sourceShotVersion: request.source.shotVersion,
+    sourceShotHashSha256: request.source.shotHashSha256,
+    sourceFrame: request.source.frame,
+    profile: request.profile,
+    prompt: request.prompt,
+    negativePrompt: request.negativePrompt,
+    promptHashSha256: request.promptHashSha256,
+    controlHashSha256: request.controlHashSha256,
+    generatedAt: now,
+    error: message.slice(0, 4000),
+  };
+}
+
 export function generateLocalStructuralStoryboard(request: AiGenerationRequest): GeneratedPayload {
   if (request.task !== 'storyboard') throw new Error('Local structural profile only renders storyboard frames.');
   const width = numericParam(request.profile.parameters.width, 1280);
