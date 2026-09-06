@@ -13,7 +13,8 @@
     "audit:windows": "node scripts/windows-smoke.mjs",
     "audit:collab": "node scripts/collaboration-smoke.mjs",
     "audit:pipeline": "node scripts/pipeline-smoke.mjs",
-    "check": "npm run audit:static && npm run audit:windows && npm run audit:collab && npm run audit:pipeline && npm run test && npm run build",
+    "audit:ai": "node scripts/ai-smoke.mjs",
+    "check": "npm run audit:static && npm run audit:windows && npm run audit:collab && npm run audit:pipeline && npm run audit:ai && npm run test && npm run build",
     "collab:server": "node server/collab-server.mjs",
     "collab:token": "node scripts/issue-collab-token.mjs"
   },
