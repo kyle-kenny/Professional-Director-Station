@@ -39,6 +39,7 @@ export type AssetRegistrationInput = {
 const GLB_MAGIC = 0x46546c67;
 const JSON_CHUNK = 0x4e4f534a;
 const FBX_BINARY_HEADER = 'Kaydara FBX Binary  ';
+export const MAX_ASSET_INGEST_BYTES = 512 * 1024 * 1024;
 
 export const assetSourceUnits: Record<AssetSourceUnit, { label: string; meters: number }> = {
   meter: { label: 'meter (m)', meters: 1 },
@@ -155,6 +156,10 @@ export function inspectAssetBuffer(fileName: string, bytes: ArrayBuffer, fbxSour
   if (!format) return {
     format: 'unsupported', fileName, sizeBytes: bytes.byteLength, valid: false,
     diagnostics: [{ severity: 'error', code: 'unsupported-format', message: 'Gate 1 仅接受 .glb 与 .fbx。' }], stats: {},
+  };
+  if (bytes.byteLength > MAX_ASSET_INGEST_BYTES) return {
+    format, fileName, sizeBytes: bytes.byteLength, valid: false,
+    diagnostics: [{ severity: 'error', code: 'asset-too-large', message: '浏览器版单资产上限为 512 MiB；请先优化或代理化资产。' }], stats: {},
   };
   return format === 'glb' ? inspectGlb(fileName, bytes) : inspectFbx(fileName, bytes, fbxSourceUnit);
 }
