@@ -3,6 +3,7 @@ import { createDefaultProject } from '../domain/defaultProject';
 import { createActorFromPreset } from '../domain/actorLibrary';
 import { createActorMotionPath, motionPresetList } from '../domain/actorMotions';
 import { posePresetList, resolvePoseDefinition } from '../domain/poseLibrary';
+import { lensPresetList } from '../domain/lensPresets';
 import { directorSkeletonContract, validateSkeletonMapping } from '../domain/skeletonContract';
 import { projectSchema } from '../domain/model';
 
@@ -37,6 +38,11 @@ describe('Gate 1 director interaction contracts', () => {
     expect(createActorMotionPath(actor, duration, 'retreat').at(-1)?.position.z).toBeCloseTo(1.5, 6);
     expect(createActorMotionPath(actor, duration, 'cross-left').at(-1)?.position.x).toBeCloseTo(-2, 6);
     expect(createActorMotionPath(actor, duration, 'cross-right').at(-1)?.position.x).toBeCloseTo(2, 6);
+  });
+
+  it('ships common full-frame directing lens presets in ascending order', () => {
+    expect(lensPresetList.map((lens) => lens.focalLengthMm)).toEqual([18, 24, 35, 50, 85, 135, 200, 300]);
+    expect(lensPresetList.every((lens) => lens.use.length > 0)).toBe(true);
   });
 
   it('defines a stable right-handed humanoid retarget contract', () => {
