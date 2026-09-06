@@ -10,7 +10,7 @@
 - [x] project import/export and version status
 - [x] CI + static quality gate
 
-## Gate 1 — director interaction (completion candidate)
+## Gate 1 — director interaction (complete)
 - [x] Transform gizmos with snapping and numeric entry
 - [x] undo/redo command stack
 - [x] pose library and humanoid skeleton retarget contract
@@ -21,7 +21,7 @@
 
 Exit criteria: a director can stage and previs a complete dialogue/action shot without editing JSON.
 
-Gate 1 becomes complete only after the asset-ingest merge commit passes the Windows + Ubuntu CI matrix on `main`.
+Acceptance passed on `main`: Windows + Ubuntu CI matrix, static quality audit, Windows compatibility audit, regression tests, and production build.
 
 ## Gate 2 — editorial and sound (next)
 - [ ] deterministic timeline engine
