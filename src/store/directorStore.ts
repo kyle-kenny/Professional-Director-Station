@@ -63,6 +63,7 @@ type State = {
   applyLightingPreset: (id: LightingPresetId) => void;
   updateLight: (lightId: string, field: 'intensity' | 'colorTemperatureK', value: number) => void;
   updateLightVector: (lightId: string, field: 'position' | 'target', axis: keyof Vec3, value: number) => void;
+  setLightPosition: (lightId: string, position: Vec3) => void;
   setLightCastShadow: (lightId: string, value: boolean) => void;
   setExposureEv: (value: number) => void;
   setShotStatus: (status: Shot['status']) => void;
@@ -249,6 +250,10 @@ export const useDirectorStore = create<State>((set, get) => ({
       if (!light.target) light.target = { x: 0, y: 1.2, z: 0 };
       light.target[axis] = value;
     }
+  })),
+  setLightPosition: (lightId, position) => set((state) => commitActive(state, (shot) => {
+    const light = shot.lights.find((item) => item.id === lightId);
+    if (light) light.position = { ...position };
   })),
   setLightCastShadow: (lightId, value) => set((state) => commitActive(state, (shot) => {
     const light = shot.lights.find((item) => item.id === lightId);
