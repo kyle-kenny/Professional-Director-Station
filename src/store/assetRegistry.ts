@@ -18,18 +18,23 @@ export function uniqueAssetId(preferredId: string, assets: AssetRef[]): string {
   return `${preferredId}-${index}`;
 }
 
-export function registerProjectAsset(candidate: AssetRef): AssetRef {
+export function validateProjectAssetCandidate(candidate: AssetRef, assets: AssetRef[]): AssetRef {
   const asset = assetRefSchema.parse(candidate);
   const pipelineErrors = validateAssetForPipeline(asset);
   if (pipelineErrors.length) throw new Error(pipelineErrors.join('\n'));
-
-  const state = useDirectorStore.getState();
-  if (state.project.assets.some((item) => item.id === asset.id && item.version === asset.version)) {
+  if (assets.some((item) => item.id === asset.id && item.version === asset.version)) {
     throw new Error(`Asset ${asset.id}@${asset.version} 已存在。`);
   }
+  return asset;
+}
+
+export function registerProjectAsset(candidate: AssetRef): AssetRef {
+  const state = useDirectorStore.getState();
+  const asset = validateProjectAssetCandidate(candidate, state.project.assets);
   const history = recordProjectHistory(state.project, { undoStack: state.undoStack, redoStack: state.redoStack });
   const project = structuredClone(state.project);
   project.assets.push(asset);
+  project.assets.sort((a, b) => `${a.id}@${a.version}`.localeCompare(`${b.id}@${b.version}`));
   persistAssetProject(project);
   useDirectorStore.setState({ project, ...history });
   return asset;
