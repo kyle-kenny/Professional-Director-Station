@@ -1,6 +1,7 @@
 import type { DirectorProject } from './model';
 import { lightingPresets } from './presets';
 import { createActorFromPreset } from './actorLibrary';
+import { localStructuralProfile } from './ai';
 
 export const createDefaultProject = (): DirectorProject => ({
   schemaVersion: 'pds-1',
@@ -20,6 +21,7 @@ export const createDefaultProject = (): DirectorProject => ({
     proxy: { enabled: true, maxWidth: 1920, maxHeight: 1080, videoCodec: 'h264', targetBitrateMbps: 8, audioCodec: 'aac', audioSampleRate: 48000 },
     dccTargets: ['blender', 'maya', 'houdini', 'unreal', 'nuke', 'resolve'],
   },
+  ai: { profiles: [localStructuralProfile], sceneCandidates: [], outputs: [] },
   updatedAt: new Date().toISOString(),
   sequences: [{
     id: 'seq-001', name: 'SEQ 001', shots: [{
