@@ -143,7 +143,7 @@ export function TimelinePanel() {
       anchor.download = `${safeFileName(shot.name)}-reference-v${shot.version}.mp4`;
       anchor.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
-      setMessage(`MP4 已完成：${result.frames} 帧${result.missingAudioClipIds.length ? `；${result.missingAudioClipIds.length} 个本地音频缺失未混入` : '；音频 mixdown 已写入' }。`);
+      setMessage(`MP4 已完成：${result.frames} 帧${result.missingAudioClipIds.length ? `；${result.missingAudioClipIds.length} 个本地音频缺失未混入` : '；音频 mixdown 已写入'}。`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'MP4 导出失败。');
     } finally {
@@ -225,7 +225,7 @@ export function TimelinePanel() {
           <label>Gain dB<input type="number" value={audio.gainDb} min={-96} max={24} step={0.5} onChange={(e) => updateAudioClip(audio.id, 'gainDb', Number(e.target.value))} /></label>
           <button className="wide compact danger" onClick={() => removeAudioClip(audio.id)} title="仅移出 Shot，IndexedDB 媒体缓存保留以支持 Undo">Remove Clip</button>
         </div>
-        <div className="meta">{audio.sourceFileName ?? audio.uri || 'No media'}{audio.sampleRate ? ` · ${audio.sampleRate}Hz · ${audio.channels}ch` : ''}</div>
+        <div className="meta">{(audio.sourceFileName ?? audio.uri) || 'No media'}{audio.sampleRate ? ` · ${audio.sampleRate}Hz · ${audio.channels}ch` : ''}</div>
       </div>)}
     </div>)}
     <div className="timeline-note">Gate 2 时间基：frame 为权威值，秒数仅为 frame / fps 的派生显示。人物、摄影机、灯光、音频、Marker、Note、OTIO 与 MP4 共享同一时基；MP4 画面与 Director Frame 使用同一个渲染器。</div>
