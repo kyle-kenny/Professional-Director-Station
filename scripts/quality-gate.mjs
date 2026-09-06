@@ -14,9 +14,14 @@ const required = [
   'src/components/FloorPlanCanvas.tsx',
   'src/components/DirectorFrameCanvas.tsx',
   'src/components/TimelinePanel.tsx',
+  'src/components/AssetLibraryPanel.tsx',
+  'src/utils/assetIngest.ts',
+  'src/storage/assetBinaryStore.ts',
+  'src/store/assetRegistry.ts',
   'src/collab/collaboration.ts',
   'src/tests/domain.test.ts',
   'src/tests/directorInteraction.test.ts',
+  'src/tests/assetIngest.test.ts',
   '.github/workflows/ci.yml',
   'start-windows.cmd',
   'docs/WINDOWS_SUPPORT.md',
@@ -26,7 +31,7 @@ const failures = [];
 for (const file of required) if (!fs.existsSync(path.join(root, file))) failures.push(`missing: ${file}`);
 
 const model = fs.readFileSync(path.join(root, 'src/domain/model.ts'), 'utf8');
-for (const contract of ["schemaVersion: z.literal('pds-1')", "handedness: z.literal('right')", "upAxis: z.literal('Y')", "forwardAxis: z.literal('-Z')", "linearUnit: z.literal('meter')", 'exposureEv: z.number().min(-8).max(8).default(0)', 'lightKeyframeSchema', 'path: z.array(lightKeyframeSchema).default([])']) {
+for (const contract of ["schemaVersion: z.literal('pds-1')", "handedness: z.literal('right')", "upAxis: z.literal('Y')", "forwardAxis: z.literal('-Z')", "linearUnit: z.literal('meter')", 'exposureEv: z.number().min(-8).max(8).default(0)', 'lightKeyframeSchema', 'path: z.array(lightKeyframeSchema).default([])', "sourceFormat: z.enum(['glb', 'fbx']).optional()", 'sourceUnitScaleMeters: z.number().positive().optional()', 'diagnostics: z.array(assetDiagnosticSchema).default([])']) {
   if (!model.includes(contract)) failures.push(`domain contract missing: ${contract}`);
 }
 const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
@@ -56,6 +61,18 @@ const skeleton = fs.readFileSync(path.join(root, 'src/domain/skeletonContract.ts
 if (!skeleton.includes("id: 'pds-humanoid-1'")) failures.push('humanoid retarget contract id missing');
 if (!skeleton.includes("forwardAxis: '-Z'")) failures.push('humanoid retarget forward-axis contract missing');
 
+const assetIngest = fs.readFileSync(path.join(root, 'src/utils/assetIngest.ts'), 'utf8');
+for (const contract of ['glb', 'fbx', 'fbx-unit-required', 'MAX_ASSET_INGEST_BYTES', 'buildNormalizedAssetRef']) {
+  if (!assetIngest.includes(contract)) failures.push(`asset ingest contract missing: ${contract}`);
+}
+const assetCache = fs.readFileSync(path.join(root, 'src/storage/assetBinaryStore.ts'), 'utf8');
+if (!assetCache.includes('indexedDB.open')) failures.push('IndexedDB asset binary cache missing');
+if (!assetCache.includes('assetBinaryKey')) failures.push('stable asset binary cache key missing');
+const assetPanel = fs.readFileSync(path.join(root, 'src/components/AssetLibraryPanel.tsx'), 'utf8');
+if (!assetPanel.includes('FBX 来源单位')) failures.push('explicit FBX source-unit control missing');
+if (!assetPanel.includes('putAssetBinary')) failures.push('asset UI does not persist source binary');
+if (!assetPanel.includes('registerProjectAsset')) failures.push('asset UI does not register normalized asset refs');
+
 const ci = fs.readFileSync(path.join(root, '.github/workflows/ci.yml'), 'utf8');
 if (!ci.includes('windows-latest')) failures.push('Windows CI runner missing');
 if (!ci.includes('audit:windows')) failures.push('Windows compatibility audit missing from CI');
@@ -84,4 +101,4 @@ if (failures.length) {
   failures.forEach((f) => console.error(` - ${f}`));
   process.exit(1);
 }
-console.log(`PDS static quality gate PASSED (${required.length} critical files, domain/3D/2D/CI contracts checked)`);
+console.log(`PDS static quality gate PASSED (${required.length} critical files, domain/3D/2D/assets/CI contracts checked)`);

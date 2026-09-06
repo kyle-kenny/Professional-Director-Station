@@ -7,6 +7,7 @@ import { lensPresetList } from '../domain/lensPresets';
 import { useDirectorStore } from '../store/directorStore';
 import { sampleActorTransform, sampleCamera, sampleLight } from '../utils/animation';
 import type { Transform, Vec3 } from '../domain/model';
+import { AssetLibraryPanel } from './AssetLibraryPanel';
 
 function NumberField({ label, value, onChange, step = 0.1 }: { label: string; value: number; onChange: (v: number) => void; step?: number }) {
   return <label className="number-field"><span>{label}</span><input type="number" value={Number(value.toFixed(3))} step={step} onChange={(e) => onChange(Number(e.target.value))} /></label>;
@@ -97,5 +98,6 @@ export function Inspector() {
       <div className="light-list">{shot.lights.map((light) => <button key={light.id} className={light.id === selected ? 'active' : ''} onClick={() => selectObject(light.id)}>{light.name}<span>{light.type} · {light.path.length}K</span></button>)}</div>
       <div className="meta">ACES Filmic 预览 · 曝光补偿范围 -8EV ～ +8EV。</div>
     </section>
+    <AssetLibraryPanel />
   </aside>;
 }

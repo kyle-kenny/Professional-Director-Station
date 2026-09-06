@@ -10,18 +10,20 @@
 - [x] project import/export and version status
 - [x] CI + static quality gate
 
-## Gate 1 — director interaction (current)
+## Gate 1 — director interaction (completion candidate)
 - [x] Transform gizmos with snapping and numeric entry
 - [x] undo/redo command stack
 - [x] pose library and humanoid skeleton retarget contract
 - [x] actor/camera/light paths with keyframes and easing
 - [x] camera rigs and director lens presets
 - [x] exposure, shadow and selectable light gizmos
-- [ ] GLB/FBX ingest normalization and asset diagnostics
+- [x] GLB/FBX ingest normalization and asset diagnostics
 
 Exit criteria: a director can stage and previs a complete dialogue/action shot without editing JSON.
 
-## Gate 2 — editorial and sound
+Gate 1 becomes complete only after the asset-ingest merge commit passes the Windows + Ubuntu CI matrix on `main`.
+
+## Gate 2 — editorial and sound (next)
 - [ ] deterministic timeline engine
 - [ ] waveform-backed dialogue/music/SFX/ambience tracks
 - [ ] frame-accurate markers and notes
