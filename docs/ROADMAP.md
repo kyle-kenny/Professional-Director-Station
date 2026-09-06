@@ -34,16 +34,18 @@ Exit criteria: reference export is frame deterministic and editorial round-trip 
 
 Acceptance passed on `main`: frame-authoritative timing, waveform/OTIO/export regression coverage, 35 tests, production build, and Windows + Ubuntu CI matrix.
 
-## Gate 3 — collaboration and review (next)
-- [ ] authenticated projects, roles and permissions
-- [ ] presence, object ownership and Shot locks
-- [ ] immutable versions, comments, frame annotations, WIP/Review/Approved
-- [ ] asset registry with checksum/provenance/license metadata
-- [ ] conflict and rollback tests
+## Gate 3 — collaboration and review (completion candidate)
+- [x] authenticated projects, roles and permissions
+- [x] presence, object ownership and Shot locks
+- [x] immutable versions, comments, frame annotations, WIP/Review/Approved
+- [x] asset registry with checksum/provenance/license metadata
+- [x] conflict and rollback tests
 
 Exit criteria: two departments can work concurrently without silent data loss.
 
-## Gate 4 — pipeline interoperability
+Gate 3 becomes complete only after the implementation PR and its merged `main` commit both pass the Windows + Ubuntu CI matrix, including collaboration auth smoke tests.
+
+## Gate 4 — pipeline interoperability (next)
 - [ ] USD scene composition
 - [ ] OCIO/ACES project configuration
 - [ ] MaterialX material references

@@ -22,6 +22,7 @@ export function Inspector() {
   const playhead = useDirectorStore((s) => s.playhead);
   const selected = useDirectorStore((s) => s.selectedObjectId);
   const selectObject = useDirectorStore((s) => s.selectObject);
+  const setMode = useDirectorStore((s) => s.setMode);
   const editTransform = useDirectorStore((s) => s.updateActorTransformAxis);
   const applyPose = useDirectorStore((s) => s.applyActorPose);
   const applyMotion = useDirectorStore((s) => s.applyActorMotionPreset);
@@ -32,8 +33,6 @@ export function Inspector() {
   const updateLightVector = useDirectorStore((s) => s.updateLightVector);
   const setLightShadow = useDirectorStore((s) => s.setLightCastShadow);
   const setExposure = useDirectorStore((s) => s.setExposureEv);
-  const status = useDirectorStore((s) => s.setShotStatus);
-  const saveVersion = useDirectorStore((s) => s.saveVersion);
   const addActor = useDirectorStore((s) => s.addActorPreset);
   const [preset, setPreset] = useState<ActorPresetId>('man-adult');
   const [motion, setMotion] = useState<MotionPresetId>('walk-forward');
@@ -49,9 +48,9 @@ export function Inspector() {
     <section>
       <div className="section-title">SHOT</div>
       <strong>{shot.name}</strong>
-      <div className="meta">T {playhead.toFixed(2)}s · frame {Math.round(playhead * shot.fps)} / {Math.round(shot.duration * shot.fps)}</div>
-      <div className="status-row">{(['WIP', 'REVIEW', 'APPROVED'] as const).map((v) => <button className={shot.status === v ? 'active' : ''} onClick={() => status(v)} key={v}>{v}</button>)}</div>
-      <button className="wide" onClick={saveVersion}>保存版本 v{shot.version + 1}</button>
+      <div className="meta">T {playhead.toFixed(2)}s · frame {Math.round(playhead * shot.fps)} / {Math.round(shot.duration * shot.fps)}<br />Status: {shot.status} · v{shot.version}</div>
+      <button className="wide" onClick={() => setMode('review')}>进入协作 / Review / Approval</button>
+      <div className="meta">Gate 3 后状态与版本不能在普通 Inspector 绕过。Review/Approved、不可变版本和回滚统一由权限化 Review 工作流处理。</div>
     </section>
     <section>
       <div className="section-title">STANDARD CAST · 标准演员库</div>
@@ -83,10 +82,7 @@ export function Inspector() {
     <section>
       <div className="section-title">CAMERA · {shot.camera.path.length} KEYS</div>
       <NumberField label="Focal length (mm)" value={camera.focalLengthMm} step={1} onChange={(v) => cam('focalLengthMm', v)} />
-      <select value="" onChange={(e) => { if (e.target.value) cam('focalLengthMm', Number(e.target.value)); }}>
-        <option value="">焦段 Preset…</option>
-        {lensPresetList.map((lens) => <option key={lens.id} value={lens.focalLengthMm}>{lens.label} · {lens.use}</option>)}
-      </select>
+      <select value="" onChange={(e) => { if (e.target.value) cam('focalLengthMm', Number(e.target.value)); }}><option value="">焦段 Preset…</option>{lensPresetList.map((lens) => <option key={lens.id} value={lens.focalLengthMm}>{lens.label} · {lens.use}</option>)}</select>
       <NumberField label="Aperture" value={camera.aperture} step={0.1} onChange={(v) => cam('aperture', v)} />
       {axes.map((axis) => <NumberField key={`cp-${axis}`} label={`Camera ${axis.toUpperCase()} (m)`} value={camera.position[axis]} onChange={(v) => camVec('position', axis, v)} />)}
       {axes.map((axis) => <NumberField key={`ct-${axis}`} label={`Target ${axis.toUpperCase()} (m)`} value={camera.target[axis]} onChange={(v) => camVec('target', axis, v)} />)}

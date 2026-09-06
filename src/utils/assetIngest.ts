@@ -34,6 +34,8 @@ export type AssetRegistrationInput = {
   version: string;
   license: string;
   owner: string;
+  contentHashSha256?: string;
+  recordedBy?: string;
 };
 
 const GLB_MAGIC = 0x46546c67;
@@ -178,6 +180,13 @@ export function buildNormalizedAssetRef(input: AssetRegistrationInput, inspectio
     license: input.license.trim() || 'unknown',
     owner: input.owner.trim() || 'project',
     unitScaleMeters: 1,
+    contentHashSha256: input.contentHashSha256,
+    provenance: {
+      source: 'import',
+      sourceUri: inspection.fileName,
+      recordedAt: new Date().toISOString(),
+      recordedBy: input.recordedBy,
+    },
     sourceFormat: inspection.format,
     sourceFileName: inspection.fileName,
     sourceSizeBytes: inspection.sizeBytes,

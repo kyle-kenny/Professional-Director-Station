@@ -3,133 +3,99 @@ import path from 'node:path';
 
 const root = process.cwd();
 const required = [
-  'src/domain/model.ts',
-  'src/domain/defaultProject.ts',
-  'src/domain/actorLibrary.ts',
-  'src/domain/poseLibrary.ts',
-  'src/domain/actorMotions.ts',
-  'src/domain/lensPresets.ts',
-  'src/domain/skeletonContract.ts',
-  'src/engine/DirectorViewport.tsx',
-  'src/components/FloorPlanCanvas.tsx',
-  'src/components/DirectorFrameCanvas.tsx',
-  'src/components/TimelinePanel.tsx',
-  'src/components/WaveformStrip.tsx',
-  'src/components/AssetLibraryPanel.tsx',
-  'src/rendering/directorFrameRenderer.ts',
-  'src/editorial/timelineEngine.ts',
-  'src/editorial/otio.ts',
-  'src/editorial/referenceExport.ts',
-  'src/editorial/referenceExportPlan.ts',
-  'src/audio/waveform.ts',
-  'src/audio/audioImport.ts',
-  'src/audio/audioTransport.ts',
-  'src/storage/audioMediaStore.ts',
-  'src/utils/assetIngest.ts',
-  'src/storage/assetBinaryStore.ts',
-  'src/store/assetRegistry.ts',
-  'src/collab/collaboration.ts',
-  'src/tests/domain.test.ts',
-  'src/tests/directorInteraction.test.ts',
-  'src/tests/assetIngest.test.ts',
-  'src/tests/timelineEngine.test.ts',
-  'src/tests/waveform.test.ts',
-  'src/tests/otio.test.ts',
-  'src/tests/referenceExport.test.ts',
-  '.github/workflows/ci.yml',
-  'start-windows.cmd',
-  'docs/WINDOWS_SUPPORT.md',
-  'docs/CHARACTER_LIBRARY.md',
+  'src/domain/model.ts','src/domain/defaultProject.ts','src/domain/actorLibrary.ts','src/domain/poseLibrary.ts','src/domain/actorMotions.ts','src/domain/lensPresets.ts','src/domain/skeletonContract.ts','src/domain/collaboration.ts',
+  'src/engine/DirectorViewport.tsx','src/components/FloorPlanCanvas.tsx','src/components/DirectorFrameCanvas.tsx','src/components/TimelinePanel.tsx','src/components/WaveformStrip.tsx','src/components/AssetLibraryPanel.tsx','src/components/CollaborationPanel.tsx','src/components/ReviewWorkspace.tsx',
+  'src/rendering/directorFrameRenderer.ts','src/editorial/timelineEngine.ts','src/editorial/otio.ts','src/editorial/referenceExport.ts','src/editorial/referenceExportPlan.ts',
+  'src/audio/waveform.ts','src/audio/audioImport.ts','src/audio/audioTransport.ts','src/storage/audioMediaStore.ts','src/utils/assetIngest.ts','src/storage/assetBinaryStore.ts','src/store/assetRegistry.ts',
+  'src/collab/collaboration.ts','src/collab/authorization.ts','src/collab/protocol.ts','src/collab/reviewWorkflow.ts','src/collab/sessionIdentity.ts','src/store/reviewRegistry.ts','src/utils/sha256.ts',
+  'server/auth.mjs','server/collab-server.mjs','scripts/collaboration-smoke.mjs',
+  'src/tests/domain.test.ts','src/tests/directorInteraction.test.ts','src/tests/assetIngest.test.ts','src/tests/timelineEngine.test.ts','src/tests/waveform.test.ts','src/tests/otio.test.ts','src/tests/referenceExport.test.ts','src/tests/collaboration.test.ts','src/tests/reviewWorkflow.test.ts',
+  '.github/workflows/ci.yml','start-windows.cmd','docs/WINDOWS_SUPPORT.md','docs/CHARACTER_LIBRARY.md',
 ];
 const failures = [];
 for (const file of required) if (!fs.existsSync(path.join(root, file))) failures.push(`missing: ${file}`);
 
-const model = fs.readFileSync(path.join(root, 'src/domain/model.ts'), 'utf8');
-for (const contract of ["schemaVersion: z.literal('pds-1')", "handedness: z.literal('right')", "upAxis: z.literal('Y')", "forwardAxis: z.literal('-Z')", "linearUnit: z.literal('meter')", 'exposureEv: z.number().min(-8).max(8).default(0)', 'lightKeyframeSchema', 'path: z.array(lightKeyframeSchema).default([])', "sourceFormat: z.enum(['glb', 'fbx']).optional()", 'sourceUnitScaleMeters: z.number().positive().optional()', 'diagnostics: z.array(assetDiagnosticSchema).default([])', 'waveformKey: z.string().min(1).optional()', 'markers: z.array(timelineMarkerSchema).default([])', 'shotNoteSchema']) {
+const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
+const model = read('src/domain/model.ts');
+for (const contract of ["schemaVersion: z.literal('pds-1')", "handedness: z.literal('right')", "upAxis: z.literal('Y')", "forwardAxis: z.literal('-Z')", "linearUnit: z.literal('meter')", 'exposureEv: z.number().min(-8).max(8).default(0)', 'lightKeyframeSchema', 'path: z.array(lightKeyframeSchema).default([])', "sourceFormat: z.enum(['glb', 'fbx']).optional()", 'sourceUnitScaleMeters: z.number().positive().optional()', 'diagnostics: z.array(assetDiagnosticSchema).default([])', 'waveformKey: z.string().min(1).optional()', 'markers: z.array(timelineMarkerSchema).default([])', 'shotNoteSchema', 'contentHashSha256', 'assetProvenanceSchema', 'collaboration: projectCollaborationStateSchema']) {
   if (!model.includes(contract)) failures.push(`domain contract missing: ${contract}`);
 }
-const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
-for (const script of ['build', 'test', 'audit:static', 'check']) if (!packageJson.scripts?.[script]) failures.push(`script missing: ${script}`);
+const packageJson = JSON.parse(read('package.json'));
+for (const script of ['build', 'test', 'audit:static', 'audit:collab', 'check', 'collab:server', 'collab:token']) if (!packageJson.scripts?.[script]) failures.push(`script missing: ${script}`);
 if (!packageJson.dependencies?.mediabunny) failures.push('maintained MP4 media toolkit dependency missing');
+if (!packageJson.dependencies?.ws) failures.push('authenticated WebSocket collaboration server dependency missing');
 
-const actorLibrary = fs.readFileSync(path.join(root, 'src/domain/actorLibrary.ts'), 'utf8');
-for (const preset of ['boy-child','girl-child','boy-teen','girl-teen','man-adult','woman-adult','man-elderly','woman-elderly']) {
-  if (!actorLibrary.includes(`'${preset}'`)) failures.push(`standard cast preset missing: ${preset}`);
-}
-for (const ageGroup of ["'child'", "'teen'", "'adult'", "'elderly'"]) {
-  if (!model.includes(ageGroup)) failures.push(`actor age group contract missing: ${ageGroup}`);
-}
-
-const poses = fs.readFileSync(path.join(root, 'src/domain/poseLibrary.ts'), 'utf8');
-for (const pose of ['neutral-standing', 'dialogue-open', 'hands-on-hips', 'pointing', 'defensive', 'crouch', 'seated', 'walk-stride']) {
-  if (!poses.includes(pose)) failures.push(`director pose preset missing: ${pose}`);
-}
-const motions = fs.readFileSync(path.join(root, 'src/domain/actorMotions.ts'), 'utf8');
-for (const motion of ['walk-forward', 'retreat', 'cross-left', 'cross-right']) {
-  if (!motions.includes(motion)) failures.push(`actor motion preset missing: ${motion}`);
-}
-const lenses = fs.readFileSync(path.join(root, 'src/domain/lensPresets.ts'), 'utf8');
-for (const focal of [18, 24, 35, 50, 85, 135, 200, 300]) {
-  if (!lenses.includes(`focalLengthMm: ${focal}`)) failures.push(`director lens preset missing: ${focal}mm`);
-}
-const skeleton = fs.readFileSync(path.join(root, 'src/domain/skeletonContract.ts'), 'utf8');
+const actorLibrary = read('src/domain/actorLibrary.ts');
+for (const preset of ['boy-child','girl-child','boy-teen','girl-teen','man-adult','woman-adult','man-elderly','woman-elderly']) if (!actorLibrary.includes(`'${preset}'`)) failures.push(`standard cast preset missing: ${preset}`);
+for (const ageGroup of ["'child'", "'teen'", "'adult'", "'elderly'"]) if (!model.includes(ageGroup)) failures.push(`actor age group contract missing: ${ageGroup}`);
+const poses = read('src/domain/poseLibrary.ts');
+for (const pose of ['neutral-standing', 'dialogue-open', 'hands-on-hips', 'pointing', 'defensive', 'crouch', 'seated', 'walk-stride']) if (!poses.includes(pose)) failures.push(`director pose preset missing: ${pose}`);
+const motions = read('src/domain/actorMotions.ts');
+for (const motion of ['walk-forward', 'retreat', 'cross-left', 'cross-right']) if (!motions.includes(motion)) failures.push(`actor motion preset missing: ${motion}`);
+const lenses = read('src/domain/lensPresets.ts');
+for (const focal of [18, 24, 35, 50, 85, 135, 200, 300]) if (!lenses.includes(`focalLengthMm: ${focal}`)) failures.push(`director lens preset missing: ${focal}mm`);
+const skeleton = read('src/domain/skeletonContract.ts');
 if (!skeleton.includes("id: 'pds-humanoid-1'")) failures.push('humanoid retarget contract id missing');
 if (!skeleton.includes("forwardAxis: '-Z'")) failures.push('humanoid retarget forward-axis contract missing');
 
-const assetIngest = fs.readFileSync(path.join(root, 'src/utils/assetIngest.ts'), 'utf8');
-for (const contract of ['glb', 'fbx', 'fbx-unit-required', 'MAX_ASSET_INGEST_BYTES', 'buildNormalizedAssetRef']) {
-  if (!assetIngest.includes(contract)) failures.push(`asset ingest contract missing: ${contract}`);
-}
-const assetCache = fs.readFileSync(path.join(root, 'src/storage/assetBinaryStore.ts'), 'utf8');
+const assetIngest = read('src/utils/assetIngest.ts');
+for (const contract of ['glb', 'fbx', 'fbx-unit-required', 'MAX_ASSET_INGEST_BYTES', 'buildNormalizedAssetRef', 'contentHashSha256', "source: 'import'"]) if (!assetIngest.includes(contract)) failures.push(`asset ingest contract missing: ${contract}`);
+const assetCache = read('src/storage/assetBinaryStore.ts');
 if (!assetCache.includes('indexedDB.open')) failures.push('IndexedDB asset binary cache missing');
 if (!assetCache.includes('assetBinaryKey')) failures.push('stable asset binary cache key missing');
-const assetPanel = fs.readFileSync(path.join(root, 'src/components/AssetLibraryPanel.tsx'), 'utf8');
-if (!assetPanel.includes('FBX 来源单位')) failures.push('explicit FBX source-unit control missing');
-if (!assetPanel.includes('putAssetBinary')) failures.push('asset UI does not persist source binary');
-if (!assetPanel.includes('registerProjectAsset')) failures.push('asset UI does not register normalized asset refs');
+const assetPanel = read('src/components/AssetLibraryPanel.tsx');
+for (const contract of ['FBX 来源单位', 'putAssetBinary', 'registerProjectAsset', 'sha256Bytes', 'provenance']) if (!assetPanel.includes(contract)) failures.push(`asset registry UI contract missing: ${contract}`);
 
-const ci = fs.readFileSync(path.join(root, '.github/workflows/ci.yml'), 'utf8');
+const ci = read('.github/workflows/ci.yml');
 if (!ci.includes('windows-latest')) failures.push('Windows CI runner missing');
 if (!ci.includes('audit:windows')) failures.push('Windows compatibility audit missing from CI');
+if (!ci.includes('audit:collab')) failures.push('collaboration authentication audit missing from CI');
 
-const viewport = fs.readFileSync(path.join(root, 'src/engine/DirectorViewport.tsx'), 'utf8');
-if (!viewport.includes('geometry?.dispose')) failures.push('3D viewport resource disposal is missing');
-if (!viewport.includes('focalLengthToVerticalFovDeg')) failures.push('real lens math is not wired into 3D viewport');
-if (!viewport.includes('resolvePoseDefinition')) failures.push('pose library is not wired into 3D actor rendering');
-if (!viewport.includes('lightObjects')) failures.push('selectable light gizmos are not wired into 3D viewport');
-if (!viewport.includes('toneMappingExposure')) failures.push('shot exposure compensation is not wired into renderer');
-if (!viewport.includes('sampleLight')) failures.push('timeline light sampling is not wired into 3D viewport');
-
-const floor = fs.readFileSync(path.join(root, 'src/components/FloorPlanCanvas.tsx'), 'utf8');
+const viewport = read('src/engine/DirectorViewport.tsx');
+for (const contract of ['geometry?.dispose', 'focalLengthToVerticalFovDeg', 'resolvePoseDefinition', 'lightObjects', 'toneMappingExposure', 'sampleLight']) if (!viewport.includes(contract)) failures.push(`3D viewport contract missing: ${contract}`);
+const floor = read('src/components/FloorPlanCanvas.tsx');
 if (!floor.includes('180° ACTION AXIS')) failures.push('floor plan 180-degree teaching/directing aid missing');
 if (!floor.includes('sampleLight')) failures.push('floor plan light animation is not synchronized to playhead');
-
-const frame = fs.readFileSync(path.join(root, 'src/components/DirectorFrameCanvas.tsx'), 'utf8');
+const frame = read('src/components/DirectorFrameCanvas.tsx');
 if (!frame.includes('renderDirectorFrame')) failures.push('2D director frame is not wired to shared deterministic renderer');
-const frameRenderer = fs.readFileSync(path.join(root, 'src/rendering/directorFrameRenderer.ts'), 'utf8');
+const frameRenderer = read('src/rendering/directorFrameRenderer.ts');
 if (!frameRenderer.includes('projectWorldToFrame')) failures.push('shared director renderer is not derived from 3D camera geometry');
 if (!frameRenderer.includes('sampleShotAtFrame')) failures.push('shared director renderer is not frame deterministic');
 
-const timelineEngine = fs.readFileSync(path.join(root, 'src/editorial/timelineEngine.ts'), 'utf8');
+const timelineEngine = read('src/editorial/timelineEngine.ts');
 for (const contract of ['timeToFrame', 'frameToTime', 'frameFromElapsed', 'sampleShotAtFrame']) if (!timelineEngine.includes(contract)) failures.push(`timeline engine contract missing: ${contract}`);
-const waveform = fs.readFileSync(path.join(root, 'src/audio/waveform.ts'), 'utf8');
+const waveform = read('src/audio/waveform.ts');
 if (!waveform.includes('buildWaveformPeaks')) failures.push('deterministic audio waveform analysis missing');
-const audioCache = fs.readFileSync(path.join(root, 'src/storage/audioMediaStore.ts'), 'utf8');
+const audioCache = read('src/storage/audioMediaStore.ts');
 if (!audioCache.includes('indexedDB.open')) failures.push('IndexedDB audio media cache missing');
-const otio = fs.readFileSync(path.join(root, 'src/editorial/otio.ts'), 'utf8');
+const otio = read('src/editorial/otio.ts');
 if (!otio.includes('Timeline.1') && !otio.includes("schema('Timeline', 1)")) failures.push('OTIO Timeline schema export missing');
 if (!otio.includes('parseOtioEditorial')) failures.push('OTIO editorial import missing');
-const referenceExport = fs.readFileSync(path.join(root, 'src/editorial/referenceExport.ts'), 'utf8');
+const referenceExport = read('src/editorial/referenceExport.ts');
 for (const contract of ['Mp4OutputFormat', 'CanvasSource', "codec: 'avc'", "codec: 'aac'", 'renderDirectorFrame']) if (!referenceExport.includes(contract)) failures.push(`MP4 reference export contract missing: ${contract}`);
+const timeline = read('src/components/TimelinePanel.tsx');
+for (const contract of ['addLightKeyframe', 'lensPresetList', 'importAudioFile', 'WaveformStrip', 'frameFromElapsed', 'exportShotReferenceMp4', 'exportShotToOtio', 'parseOtioEditorial', 'addMarker', 'addNote']) if (!timeline.includes(contract)) failures.push(`editorial timeline UI contract missing: ${contract}`);
 
-const timeline = fs.readFileSync(path.join(root, 'src/components/TimelinePanel.tsx'), 'utf8');
-for (const contract of ['addLightKeyframe', 'lensPresetList', 'importAudioFile', 'WaveformStrip', 'frameFromElapsed', 'exportShotReferenceMp4', 'exportShotToOtio', 'parseOtioEditorial', 'addMarker', 'addNote']) {
-  if (!timeline.includes(contract)) failures.push(`editorial timeline UI contract missing: ${contract}`);
-}
+const collaborationDomain = read('src/domain/collaboration.ts');
+for (const contract of ['projectRoleSchema', 'reviewCommentSchema', 'frameAnnotationSchema', 'shotVersionRecordSchema', 'approvalEventSchema', 'revision']) if (!collaborationDomain.includes(contract)) failures.push(`Gate 3 collaboration domain missing: ${contract}`);
+const authorization = read('src/collab/authorization.ts');
+for (const role of ['owner', 'director', 'editor', 'reviewer', 'viewer']) if (!authorization.includes(`${role}:`)) failures.push(`Gate 3 role permission matrix missing: ${role}`);
+const protocol = read('src/collab/protocol.ts');
+for (const contract of ['baseRevision', 'stale revision', 'collaborationLockSchema', 'pruneExpiredLocks', 'hasValidLockToken']) if (!protocol.includes(contract)) failures.push(`Gate 3 conflict/lock protocol missing: ${contract}`);
+const server = read('server/collab-server.mjs');
+for (const contract of ['verifyCollaborationToken', 'stale-revision', 'lock-required', 'permission-denied', 'acquire-lock', 'presence', 'revision']) if (!server.includes(contract)) failures.push(`collaboration server authority contract missing: ${contract}`);
+const auth = read('server/auth.mjs');
+for (const contract of ['createHmac', 'timingSafeEqual', "alg: 'HS256'", 'Token claim missing', 'expired']) if (!auth.includes(contract)) failures.push(`collaboration authentication contract missing: ${contract}`);
+const review = read('src/collab/reviewWorkflow.ts');
+for (const contract of ['createImmutableShotVersion', 'snapshotHashSha256', 'assertImmutableVersion', 'APPROVED']) if (!review.includes(contract)) failures.push(`review/version integrity contract missing: ${contract}`);
+const reviewUi = read('src/components/ReviewWorkspace.tsx');
+for (const contract of ['CollaborationPanel', 'addFrameAnnotation', 'rollbackToShotVersion', 'transitionActiveShotStatus', 'PROJECT MEMBERS']) if (!reviewUi.includes(contract)) failures.push(`Gate 3 review UI missing: ${contract}`);
+const inspector = read('src/components/Inspector.tsx');
+if (inspector.includes('setShotStatus')) failures.push('Inspector still bypasses protected Gate 3 approval workflow');
 
 if (failures.length) {
   console.error('PDS static quality gate FAILED');
-  failures.forEach((f) => console.error(` - ${f}`));
+  failures.forEach((failure) => console.error(` - ${failure}`));
   process.exit(1);
 }
-console.log(`PDS static quality gate PASSED (${required.length} critical files, Gate 0-2 domain/3D/2D/assets/editorial/audio/CI contracts checked)`);
+console.log(`PDS static quality gate PASSED (${required.length} critical files, Gate 0-3 domain/3D/2D/assets/editorial/audio/collaboration/review/CI contracts checked)`);

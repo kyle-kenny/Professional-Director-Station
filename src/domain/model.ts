@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { projectCollaborationStateSchema } from './collaboration';
 
 export const vec3Schema = z.object({ x: z.number(), y: z.number(), z: z.number() });
 export type Vec3 = z.infer<typeof vec3Schema>;
@@ -47,6 +48,15 @@ export const assetDiagnosticSchema = z.object({
 });
 export type AssetDiagnosticRecord = z.infer<typeof assetDiagnosticSchema>;
 
+export const assetProvenanceSchema = z.object({
+  source: z.enum(['import', 'generated', 'external', 'derived', 'unknown']).default('unknown'),
+  sourceUri: z.string().optional(),
+  recordedAt: z.string().optional(),
+  recordedBy: z.string().optional(),
+  parentAssetId: z.string().optional(),
+}).default({ source: 'unknown' });
+export type AssetProvenance = z.infer<typeof assetProvenanceSchema>;
+
 export const assetRefSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
@@ -56,6 +66,8 @@ export const assetRefSchema = z.object({
   license: z.string().default('unknown'),
   owner: z.string().default('project'),
   unitScaleMeters: z.number().positive().default(1),
+  contentHashSha256: z.string().regex(/^[0-9a-f]{64}$/).optional(),
+  provenance: assetProvenanceSchema,
   sourceFormat: z.enum(['glb', 'fbx']).optional(),
   sourceFileName: z.string().min(1).optional(),
   sourceSizeBytes: z.number().int().nonnegative().optional(),
@@ -184,8 +196,9 @@ export const projectSchema = z.object({
   }),
   sequences: z.array(sequenceSchema),
   assets: z.array(assetRefSchema),
+  collaboration: projectCollaborationStateSchema,
   updatedAt: z.string(),
 });
 export type DirectorProject = z.infer<typeof projectSchema>;
 
-export type WorkspaceMode = '3d' | 'floorplan' | 'frame' | 'timeline' | 'assets';
+export type WorkspaceMode = '3d' | 'floorplan' | 'frame' | 'timeline' | 'assets' | 'review';

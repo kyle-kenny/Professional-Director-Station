@@ -8,6 +8,14 @@ export const createDefaultProject = (): DirectorProject => ({
   name: 'Professional Director Station — Demo',
   coordinateConvention: { handedness: 'right', upAxis: 'Y', forwardAxis: '-Z', linearUnit: 'meter' },
   assets: [],
+  collaboration: {
+    revision: 0,
+    members: [{ userId: 'local-owner', displayName: 'Local Director', role: 'owner', department: 'direction', active: true }],
+    comments: [],
+    annotations: [],
+    versions: [],
+    approvals: [],
+  },
   updatedAt: new Date().toISOString(),
   sequences: [{
     id: 'seq-001',

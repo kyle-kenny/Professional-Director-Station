@@ -1,4 +1,4 @@
-import { Box, Download, Film, LayoutDashboard, Map, Redo2, Undo2, Upload } from 'lucide-react';
+import { Box, Download, Film, LayoutDashboard, Map, Redo2, Undo2, Upload, Users } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { useDirectorStore } from '../store/directorStore';
 
@@ -19,13 +19,8 @@ export function TopBar() {
       const editable = target?.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName ?? '');
       if (editable || !(event.ctrlKey || event.metaKey)) return;
       const key = event.key.toLowerCase();
-      if (key === 'z') {
-        event.preventDefault();
-        if (event.shiftKey) redo(); else undo();
-      } else if (key === 'y') {
-        event.preventDefault();
-        redo();
-      }
+      if (key === 'z') { event.preventDefault(); if (event.shiftKey) redo(); else undo(); }
+      else if (key === 'y') { event.preventDefault(); redo(); }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
@@ -45,11 +40,8 @@ export function TopBar() {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = () => {
-      try {
-        importProject(String(reader.result));
-      } catch (error) {
-        alert(`工程文件验证失败：${error instanceof Error ? error.message : 'unknown'}`);
-      }
+      try { importProject(String(reader.result)); }
+      catch (error) { alert(`工程文件验证失败：${error instanceof Error ? error.message : 'unknown'}`); }
     };
     reader.readAsText(file);
   };
@@ -61,6 +53,7 @@ export function TopBar() {
       <button className={mode === 'floorplan' ? 'active' : ''} onClick={() => setMode('floorplan')}><Map size={16} />2D 站位</button>
       <button className={mode === 'frame' ? 'active' : ''} onClick={() => setMode('frame')}><LayoutDashboard size={16} />2D 构图</button>
       <button className={mode === 'timeline' ? 'active' : ''} onClick={() => setMode('timeline')}><Film size={16} />时间线/声音</button>
+      <button className={mode === 'review' ? 'active' : ''} onClick={() => setMode('review')}><Users size={16} />协作/审片</button>
     </nav>
     <div className="top-actions">
       <button onClick={undo} disabled={!canUndo} title="撤销 Ctrl/Cmd+Z" aria-label="撤销"><Undo2 size={16} /></button>
