@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { projectSchema, type Actor, type CameraKeyframe, type DirectorLight, type DirectorProject, type LightKeyframe, type Shot, type Transform, type Vec3, type WorkspaceMode } from '../domain/model';
+import { projectSchema, type Actor, type AudioClip, type CameraKeyframe, type DirectorLight, type DirectorProject, type LightKeyframe, type Shot, type ShotNote, type TimelineMarker, type Transform, type Vec3, type WorkspaceMode } from '../domain/model';
 import { createDefaultProject } from '../domain/defaultProject';
 import { lightingPresets, type LightingPresetId } from '../domain/presets';
 import { createActorFromPreset, type ActorPresetId } from '../domain/actorLibrary';
@@ -7,11 +7,15 @@ import { createCameraRigPath, type CameraRigPresetId } from '../domain/cameraRig
 import { createActorMotionPath, type MotionPresetId } from '../domain/actorMotions';
 import { poseLibrary, type PosePresetId } from '../domain/poseLibrary';
 import { sampleActorTransform, sampleCamera, sampleLight } from '../utils/animation';
+import { clampFrame, frameToTime, snapTimeToFrame, stepFrame, timeToFrame } from '../editorial/timelineEngine';
 import { recordProjectHistory, redoProjectHistory, undoProjectHistory } from './projectHistory';
 
 const STORAGE_KEY = 'pds.project.v1';
 
 export type TransformMode = 'translate' | 'rotate' | 'scale';
+export type EditorialImport = { audio: AudioClip[]; markers: TimelineMarker[]; notes: ShotNote[] };
+
+type AudioTimingField = 'start' | 'duration' | 'gainDb';
 
 function loadProject(): DirectorProject {
   try {
@@ -44,6 +48,8 @@ type State = {
   redoStack: DirectorProject[];
   setMode: (mode: WorkspaceMode) => void;
   setPlayhead: (time: number) => void;
+  setPlayheadFrame: (frame: number) => void;
+  stepPlayheadFrames: (delta: number) => void;
   selectObject: (id?: string) => void;
   setTransformMode: (mode: TransformMode) => void;
   undo: () => void;
@@ -69,7 +75,15 @@ type State = {
   setLightCastShadow: (lightId: string, value: boolean) => void;
   setExposureEv: (value: number) => void;
   setShotStatus: (status: Shot['status']) => void;
-  addAudioPlaceholder: (kind: 'dialogue' | 'music' | 'sfx' | 'ambience') => void;
+  addAudioPlaceholder: (kind: AudioClip['kind']) => void;
+  addAudioClip: (clip: AudioClip) => void;
+  removeAudioClip: (clipId: string) => void;
+  updateAudioClip: (clipId: string, field: AudioTimingField, value: number) => void;
+  addMarker: (label: string, color?: TimelineMarker['color']) => void;
+  removeMarker: (markerId: string) => void;
+  addNote: (text: string, author?: string) => void;
+  removeNote: (noteId: string) => void;
+  replaceEditorial: (editorial: EditorialImport) => void;
   addActorPreset: (presetId: ActorPresetId) => void;
   saveVersion: () => void;
   exportProject: () => string;
@@ -98,7 +112,14 @@ function normalizeTransform(transform: Transform): Transform {
 }
 
 function snapShotTime(time: number, shot: Shot): number {
-  return Math.min(shot.duration, Math.max(0, Math.round(time * shot.fps) / shot.fps));
+  return snapTimeToFrame(time, shot.duration, shot.fps);
+}
+
+function normalizeAudioClip(clip: AudioClip, shot: Shot): AudioClip {
+  const oneFrame = 1 / shot.fps;
+  const start = Math.min(Math.max(0, snapShotTime(clip.start, shot)), Math.max(0, shot.duration - oneFrame));
+  const duration = Math.min(Math.max(oneFrame, snapShotTime(clip.duration, shot)), Math.max(oneFrame, shot.duration - start));
+  return { ...clip, start, duration, gainDb: Math.min(24, Math.max(-96, clip.gainDb)) };
 }
 
 function upsertActorKeyframe(actor: Actor, shot: Shot, time: number, transform: Transform) {
@@ -163,7 +184,16 @@ export const useDirectorStore = create<State>((set, get) => ({
   undoStack: [],
   redoStack: [],
   setMode: (mode) => set({ mode }),
-  setPlayhead: (playhead) => set((state) => ({ playhead: Math.min(state.getActiveShot().duration, Math.max(0, playhead)) })),
+  setPlayhead: (playhead) => set((state) => ({ playhead: snapShotTime(playhead, state.getActiveShot()) })),
+  setPlayheadFrame: (frame) => set((state) => {
+    const shot = state.getActiveShot();
+    return { playhead: frameToTime(clampFrame(frame, shot.duration, shot.fps), shot.fps) };
+  }),
+  stepPlayheadFrames: (delta) => set((state) => {
+    const shot = state.getActiveShot();
+    const current = timeToFrame(state.playhead, shot.fps);
+    return { playhead: frameToTime(stepFrame(current, delta, shot.duration, shot.fps), shot.fps) };
+  }),
   selectObject: (selectedObjectId) => set({ selectedObjectId }),
   setTransformMode: (transformMode) => set({ transformMode }),
   undo: () => set((state) => {
@@ -193,9 +223,7 @@ export const useDirectorStore = create<State>((set, get) => ({
       const sampled = sampleActorTransform(actor, state.playhead);
       sampled[field][axis] = value;
       upsertActorKeyframe(actor, shot, state.playhead, sampled);
-    } else {
-      actor.transform[field][axis] = field === 'scale' ? Math.max(0.01, value) : value;
-    }
+    } else actor.transform[field][axis] = field === 'scale' ? Math.max(0.01, value) : value;
   })),
   setActorTransform: (actorId, transform) => set((state) => commitActive(state, (shot) => {
     const actor = shot.actors.find((a) => a.id === actorId);
@@ -221,8 +249,7 @@ export const useDirectorStore = create<State>((set, get) => ({
   })),
   addActorKeyframe: (actorId) => set((state) => commitActive(state, (shot) => {
     const actor = shot.actors.find((a) => a.id === actorId);
-    if (!actor) return;
-    upsertActorKeyframe(actor, shot, state.playhead, sampleActorTransform(actor, state.playhead));
+    if (actor) upsertActorKeyframe(actor, shot, state.playhead, sampleActorTransform(actor, state.playhead));
   })),
   removeActorKeyframe: (actorId, time) => set((state) => commitActive(state, (shot) => {
     const actor = shot.actors.find((a) => a.id === actorId);
@@ -291,8 +318,7 @@ export const useDirectorStore = create<State>((set, get) => ({
   })),
   addLightKeyframe: (lightId) => set((state) => commitActive(state, (shot) => {
     const light = shot.lights.find((item) => item.id === lightId);
-    if (!light) return;
-    upsertLightKeyframe(light, shot, state.playhead, sampleLight(light, state.playhead));
+    if (light) upsertLightKeyframe(light, shot, state.playhead, sampleLight(light, state.playhead));
   })),
   removeLightKeyframe: (lightId, time) => set((state) => commitActive(state, (shot) => {
     const light = shot.lights.find((item) => item.id === lightId);
@@ -309,7 +335,41 @@ export const useDirectorStore = create<State>((set, get) => ({
   setShotStatus: (status) => set((state) => commitActive(state, (shot) => { shot.status = status; })),
   addAudioPlaceholder: (kind) => set((state) => commitActive(state, (shot) => {
     const index = shot.audio.length + 1;
-    shot.audio.push({ id: `audio-${Date.now()}`, name: `${kind.toUpperCase()} ${index}`, kind, start: 0, duration: Math.min(3, shot.duration), gainDb: 0, uri: '' });
+    shot.audio.push(normalizeAudioClip({ id: `audio-${Date.now()}`, name: `${kind.toUpperCase()} ${index}`, kind, start: state.playhead, duration: Math.min(3, shot.duration), gainDb: 0, uri: '' }, shot));
+  })),
+  addAudioClip: (clip) => set((state) => commitActive(state, (shot) => {
+    if (shot.audio.some((item) => item.id === clip.id)) throw new Error(`Audio clip ${clip.id} 已存在。`);
+    shot.audio.push(normalizeAudioClip(clip, shot));
+    shot.audio.sort((a, b) => a.start - b.start || a.id.localeCompare(b.id));
+  })),
+  removeAudioClip: (clipId) => set((state) => commitActive(state, (shot) => { shot.audio = shot.audio.filter((clip) => clip.id !== clipId); })),
+  updateAudioClip: (clipId, field, value) => set((state) => commitActive(state, (shot) => {
+    const clip = shot.audio.find((item) => item.id === clipId);
+    if (!clip) return;
+    if (field === 'gainDb') clip.gainDb = Math.min(24, Math.max(-96, value));
+    else if (field === 'start') clip.start = Math.min(snapShotTime(value, shot), Math.max(0, shot.duration - 1 / shot.fps));
+    else clip.duration = Math.min(Math.max(1 / shot.fps, snapShotTime(value, shot)), Math.max(1 / shot.fps, shot.duration - clip.start));
+  })),
+  addMarker: (label, color = 'amber') => set((state) => commitActive(state, (shot) => {
+    const text = label.trim();
+    if (!text) return;
+    const frame = timeToFrame(state.playhead, shot.fps);
+    shot.markers.push({ id: `marker-${Date.now()}-${frame}`, time: frameToTime(frame, shot.fps), label: text, color });
+    shot.markers.sort((a, b) => a.time - b.time || a.id.localeCompare(b.id));
+  })),
+  removeMarker: (markerId) => set((state) => commitActive(state, (shot) => { shot.markers = shot.markers.filter((marker) => marker.id !== markerId); })),
+  addNote: (text, author = 'Director') => set((state) => commitActive(state, (shot) => {
+    const body = text.trim();
+    if (!body) return;
+    const frame = timeToFrame(state.playhead, shot.fps);
+    shot.notes.push({ id: `note-${Date.now()}-${frame}`, author: author.trim() || 'Director', time: frameToTime(frame, shot.fps), text: body });
+    shot.notes.sort((a, b) => a.time - b.time || a.id.localeCompare(b.id));
+  })),
+  removeNote: (noteId) => set((state) => commitActive(state, (shot) => { shot.notes = shot.notes.filter((note) => note.id !== noteId); })),
+  replaceEditorial: (editorial) => set((state) => commitActive(state, (shot) => {
+    shot.audio = editorial.audio.map((clip) => normalizeAudioClip(clip, shot));
+    shot.markers = editorial.markers.map((marker) => ({ ...marker, time: snapShotTime(marker.time, shot) }));
+    shot.notes = editorial.notes.map((note) => ({ ...note, time: snapShotTime(note.time, shot) }));
   })),
   addActorPreset: (presetId) => set((state) => commitActive(state, (shot) => {
     const index = shot.actors.length + 1;
