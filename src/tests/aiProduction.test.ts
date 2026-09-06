@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { localStructuralProfile, type AiModelProfile } from '../domain/ai';
+import { aiModelProfileSchema, localStructuralProfile, type AiModelProfile } from '../domain/ai';
 import { createDefaultProject } from '../domain/defaultProject';
 import { projectSchema } from '../domain/model';
 import { breakDownScript } from '../ai/scriptBreakdown';
@@ -48,11 +48,14 @@ describe('Gate 5 AI production', () => {
     expect(generated.record.controlHashSha256).toBe(request.controlHashSha256);
   });
 
-  it('sends runtime credentials only in transport headers for a PDS HTTP video profile', async () => {
+  it('sends a sampled whole-Shot control sequence for video and keeps runtime credentials out of project data', async () => {
     const project = createDefaultProject();
     const shot = project.sequences[0].shots[0];
     const profile: AiModelProfile = { id: 'studio-video', label: 'Studio Video', provider: 'pds-http', endpoint: 'https://ai.example.test/v1/generate', modelId: 'video-x', revision: '2026-09', tasks: ['video'], defaultParameters: { seed: 42 }, enabled: true };
     const request = buildGenerationRequest(project, shot, 'video', 0, profile, 'Keep screen direction.', 'No topology changes.');
+    expect(request.controlSequence?.length).toBeGreaterThan(1);
+    expect(request.controlSequence?.[0].frame).toBe(0);
+    expect(request.controlSequence?.at(-1)?.frame).toBe(Math.round(shot.duration * shot.fps));
     let sentBody = '';
     let sentAuth = '';
     const fakeFetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
@@ -67,6 +70,11 @@ describe('Gate 5 AI production', () => {
     expect(generated.bytes?.length).toBeGreaterThan(0);
     expect(generated.record.providerJobId).toBe('job-1');
     expect(generated.record.profile.modelId).toBe('video-x');
+  });
+
+  it('rejects insecure non-local remote inference endpoints', () => {
+    expect(() => aiModelProfileSchema.parse({ id: 'bad', label: 'Bad', provider: 'pds-http', endpoint: 'http://remote.example/generate', modelId: 'x', tasks: ['video'] })).toThrow();
+    expect(() => aiModelProfileSchema.parse({ id: 'local', label: 'Local', provider: 'pds-http', endpoint: 'http://localhost:9000/generate', modelId: 'x', tasks: ['video'] })).not.toThrow();
   });
 
   it('requires director authority before generated media can become a production asset', () => {
