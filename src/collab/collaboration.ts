@@ -12,12 +12,7 @@ export type CollaborationCallbacks = {
   onStatus?: (status: 'connecting' | 'connected' | 'reconnecting' | 'disconnected' | 'error') => void;
 };
 
-type ConnectOptions = {
-  url: string;
-  token: string;
-  project: DirectorProject;
-  callbacks?: CollaborationCallbacks;
-};
+type ConnectOptions = { url: string; token: string; project: DirectorProject; callbacks?: CollaborationCallbacks };
 
 export class CollaborationSession {
   readonly doc = new Y.Doc();
@@ -32,6 +27,8 @@ export class CollaborationSession {
   private locks: CollaborationLock[] = [];
   private heldLockTokens = new Set<string>();
   private presence: CollaborationPresence[] = [];
+  private pendingMutationId?: string;
+  private queuedProject?: DirectorProject;
 
   get currentRevision() { return this.revision; }
   get currentLocks() { return [...this.locks]; }
@@ -49,10 +46,7 @@ export class CollaborationSession {
 
   private openSocket() {
     const options = this.options;
-    if (!options || typeof WebSocket === 'undefined') {
-      options?.callbacks?.onStatus?.('error');
-      return;
-    }
+    if (!options || typeof WebSocket === 'undefined') { options?.callbacks?.onStatus?.('error'); return; }
     const socket = new WebSocket(options.url, ['pds-v1', `pds-token.${options.token}`]);
     this.socket = socket;
     socket.onopen = () => {
@@ -60,10 +54,14 @@ export class CollaborationSession {
       options.callbacks?.onStatus?.('connected');
       socket.send(JSON.stringify({ type: 'hello', project: options.project }));
     };
-    socket.onmessage = (event) => this.handleServerMessage(JSON.parse(String(event.data)) as Record<string, any>);
+    socket.onmessage = (event) => {
+      try { this.handleServerMessage(JSON.parse(String(event.data)) as Record<string, any>); }
+      catch { options.callbacks?.onStatus?.('error'); }
+    };
     socket.onerror = () => options.callbacks?.onStatus?.('error');
     socket.onclose = () => {
       if (this.socket === socket) this.socket = undefined;
+      this.pendingMutationId = undefined;
       options.callbacks?.onStatus?.(this.intentionalClose ? 'disconnected' : 'reconnecting');
       if (!this.intentionalClose) this.scheduleReconnect();
     };
@@ -72,10 +70,7 @@ export class CollaborationSession {
   private scheduleReconnect() {
     if (!this.options || this.reconnectTimer !== undefined || this.intentionalClose) return;
     const delay = reconnectDelayMs(this.reconnectAttempt++);
-    this.reconnectTimer = window.setTimeout(() => {
-      this.reconnectTimer = undefined;
-      this.openSocket();
-    }, delay);
+    this.reconnectTimer = window.setTimeout(() => { this.reconnectTimer = undefined; this.openSocket(); }, delay);
   }
 
   private handleServerMessage(message: Record<string, any>) {
@@ -97,12 +92,16 @@ export class CollaborationSession {
     }
     if (message.type === 'accepted') {
       this.revision = Number(message.revision ?? this.revision + 1);
+      if (message.mutationId === this.pendingMutationId) this.pendingMutationId = undefined;
       if (message.project) callbacks?.onProject?.(message.project as DirectorProject, this.revision, 'accepted');
+      this.flushQueuedMutation();
       return;
     }
     if (message.type === 'conflict') {
       const conflict = message as ServerConflict;
       this.revision = conflict.expectedRevision;
+      this.pendingMutationId = undefined;
+      this.queuedProject = undefined;
       callbacks?.onConflict?.(conflict);
       if (conflict.project) callbacks?.onProject?.(conflict.project, conflict.expectedRevision, 'conflict');
       return;
@@ -112,7 +111,6 @@ export class CollaborationSession {
     if (message.type === 'lock-acquired' && message.lock) {
       this.heldLockTokens.add(message.lock.token);
       this.replaceLocks([...this.locks.filter((lock) => !(lock.scope === message.lock.scope && lock.targetId === message.lock.targetId)), message.lock]);
-      return;
     }
   }
 
@@ -128,39 +126,38 @@ export class CollaborationSession {
     this.options?.callbacks?.onPresence?.([...presence]);
   }
 
-  acquireLock(scope: LockScope, targetId: string, leaseMs = 30_000) {
-    this.send({ type: 'acquire-lock', scope, targetId, leaseMs });
-  }
-
-  releaseLock(token: string) {
-    this.heldLockTokens.delete(token);
-    this.send({ type: 'release-lock', token });
-  }
+  acquireLock(scope: LockScope, targetId: string, leaseMs = 30_000) { this.send({ type: 'acquire-lock', scope, targetId, leaseMs }); }
+  releaseLock(token: string) { this.heldLockTokens.delete(token); this.send({ type: 'release-lock', token }); }
 
   publishProject(project: DirectorProject) {
     this.projectMap.set('json', JSON.stringify(project));
-    if (this.connected) {
-      this.send({ type: 'mutate', mutationId: crypto.randomUUID(), baseRevision: this.revision, project, lockTokens: [...this.heldLockTokens] });
-    } else {
-      this.channel?.postMessage({ type: 'project', project });
-    }
+    if (!this.connected) { this.channel?.postMessage({ type: 'project', project }); return; }
+    if (this.pendingMutationId) { this.queuedProject = structuredClone(project); return; }
+    this.sendMutation(project);
   }
 
-  updatePresence(shotId?: string, objectId?: string, frame?: number) {
-    this.send({ type: 'presence', shotId, objectId, frame });
+  private sendMutation(project: DirectorProject) {
+    const mutationId = crypto.randomUUID();
+    this.pendingMutationId = mutationId;
+    this.send({ type: 'mutate', mutationId, baseRevision: this.revision, project, lockTokens: [...this.heldLockTokens] });
   }
 
-  private send(message: unknown) {
-    if (this.socket?.readyState === WebSocket.OPEN) this.socket.send(JSON.stringify(message));
+  private flushQueuedMutation() {
+    if (!this.connected || this.pendingMutationId || !this.queuedProject) return;
+    const project = this.queuedProject;
+    this.queuedProject = undefined;
+    project.collaboration.revision = this.revision;
+    this.sendMutation(project);
   }
+
+  updatePresence(shotId?: string, objectId?: string, frame?: number) { this.send({ type: 'presence', shotId, objectId, frame }); }
+  private send(message: unknown) { if (this.socket?.readyState === WebSocket.OPEN) this.socket.send(JSON.stringify(message)); }
 
   connectRoom(roomId: string, onRemoteProject: (project: DirectorProject) => void) {
     if (typeof BroadcastChannel === 'undefined') return;
     this.channel?.close();
     this.channel = new BroadcastChannel(`pds:${roomId}`);
-    this.channel.onmessage = (event) => {
-      if (event.data?.type === 'project') onRemoteProject(event.data.project as DirectorProject);
-    };
+    this.channel.onmessage = (event) => { if (event.data?.type === 'project') onRemoteProject(event.data.project as DirectorProject); };
   }
 
   private disconnectSocket(intentional = true) {
@@ -169,6 +166,8 @@ export class CollaborationSession {
     this.reconnectTimer = undefined;
     this.socket?.close();
     this.socket = undefined;
+    this.pendingMutationId = undefined;
+    this.queuedProject = undefined;
   }
 
   disconnect() {
