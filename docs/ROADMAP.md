@@ -45,7 +45,7 @@ Exit criteria: two departments can work concurrently without silent data loss.
 
 Acceptance passed on `main` commit `561fe7c6371cd94a8b405cc10e5e8362149225b4`: Windows + Ubuntu CI, collaboration authentication smoke audit, 42 regression tests and production build.
 
-## Gate 4 — pipeline interoperability (completion candidate)
+## Gate 4 — pipeline interoperability (complete)
 - [x] OpenUSD USDA scene composition and PDS round-trip payload
 - [x] OCIO 2.5 / ACES 2.0 project configuration
 - [x] MaterialX 1.39 material references
@@ -55,13 +55,18 @@ Acceptance passed on `main` commit `561fe7c6371cd94a8b405cc10e5e8362149225b4`: W
 
 Exit criteria: interchange data preserves PDS meter/Y-up/timebase/color/material identities and adapter packages are deterministic across Windows and Ubuntu.
 
-Gate 4 becomes complete only after the implementation PR and merged `main` commit both pass static, collaboration, pipeline, regression and production-build gates on Windows + Ubuntu.
+Acceptance passed on `main` commit `0e5ed09b0f02dfd2fecc726e10071c5fca592380`: Windows + Ubuntu CI, pipeline interoperability smoke audit, regression tests and production build.
 
-## Gate 5 — AI production (next)
-- [ ] script breakdown → structured scene candidates
-- [ ] pose/depth/lineart/camera-reference analysis
-- [ ] structure-conditioned storyboard/video generation
-- [ ] model/profile registry with reproducible prompt/control metadata
-- [ ] generated media provenance and approval
+## Gate 5 — AI production (completion candidate)
+- [x] deterministic screenplay breakdown → structured scene candidates
+- [x] frame-authoritative pose/depth/lineart/camera-reference control analysis
+- [x] local structural storyboard generation and PDS-HTTP storyboard/video generation envelope
+- [x] whole-Shot sampled structural conditioning for video requests
+- [x] model/profile registry with revisioned parameter snapshots
+- [x] prompt/control/source-Shot SHA-256 reproducibility metadata
+- [x] generated/failed media provenance, approval/rejection and Asset Registry promotion
+- [x] runtime credential isolation and HTTPS endpoint policy
 
-Exit criteria: AI outputs remain traceable to Shot versions and never overwrite approved director data.
+Exit criteria: AI outputs and failures remain traceable to immutable Shot content, model/profile revisions, prompts and structural controls; generation is additive and never overwrites approved director data.
+
+Gate 5 becomes complete only after the implementation PR and merged `main` commit both pass static, Windows compatibility, collaboration, pipeline, AI, regression and production-build gates on Windows + Ubuntu.
