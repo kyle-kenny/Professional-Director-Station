@@ -11,10 +11,10 @@ export type AssetDiagnostic = {
 };
 
 export type AssetInspection = {
-  format: AssetSourceFormat;
+  format: AssetSourceFormat | 'unsupported';
   fileName: string;
   sizeBytes: number;
-  sourceUnitScaleMeters: number;
+  sourceUnitScaleMeters?: number;
   valid: boolean;
   diagnostics: AssetDiagnostic[];
   stats: {
@@ -109,7 +109,7 @@ function inspectGlb(fileName: string, bytes: ArrayBuffer): AssetInspection {
   };
 }
 
-function inspectFbx(fileName: string, bytes: ArrayBuffer, sourceUnit: AssetSourceUnit): AssetInspection {
+function inspectFbx(fileName: string, bytes: ArrayBuffer, sourceUnit?: AssetSourceUnit): AssetInspection {
   const diagnostics: AssetDiagnostic[] = [];
   const prefixBytes = new Uint8Array(bytes, 0, Math.min(bytes.byteLength, 1024 * 1024));
   const prefix = new TextDecoder('utf-8', { fatal: false }).decode(prefixBytes);
@@ -128,31 +128,41 @@ function inspectFbx(fileName: string, bytes: ArrayBuffer, sourceUnit: AssetSourc
     }
   }
 
-  const selectedMeters = assetSourceUnitToMeters(sourceUnit);
-  if (declaredUnitMeters && Math.abs(declaredUnitMeters - selectedMeters) > 1e-6) {
-    diagnostics.push({ severity: 'warning', code: 'fbx-unit-conflict', message: `FBX 声明单位约为 ${declaredUnitMeters}m/单位，但当前选择为 ${selectedMeters}m/单位。请确认来源 DCC 设置。` });
-  }
-  if (!declaredUnitMeters) diagnostics.push({ severity: 'warning', code: 'fbx-unit-explicit', message: '未可靠读取 FBX 单位；导演台不会猜测，使用你显式选择的来源单位。' });
   if (!binary && !/FBXHeaderExtension/i.test(prefix)) diagnostics.push({ severity: 'error', code: 'fbx-header', message: '未识别有效的 ASCII/Binary FBX 头部。' });
   if (fbxVersion && fbxVersion < 7000) diagnostics.push({ severity: 'warning', code: 'fbx-legacy', message: `检测到较旧 FBX 版本 ${fbxVersion}；建议从 DCC 重新导出 FBX 7.x。` });
-  diagnostics.push({ severity: 'info', code: 'fbx-normalize', message: `来源比例 ${selectedMeters}m/单位；PDS 导入变换将规范化为米制 1:1。` });
+
+  if (!sourceUnit) {
+    diagnostics.push({ severity: 'error', code: 'fbx-unit-required', message: 'FBX 必须显式确认来源单位；PDS 不会猜测厘米/米制。' });
+    if (declaredUnitMeters) diagnostics.push({ severity: 'info', code: 'fbx-unit-declared', message: `文件头声明约 ${declaredUnitMeters}m/单位，仅作为参考，仍需人工确认。` });
+  } else {
+    const selectedMeters = assetSourceUnitToMeters(sourceUnit);
+    if (declaredUnitMeters && Math.abs(declaredUnitMeters - selectedMeters) > 1e-6) {
+      diagnostics.push({ severity: 'warning', code: 'fbx-unit-conflict', message: `FBX 声明单位约为 ${declaredUnitMeters}m/单位，但当前选择为 ${selectedMeters}m/单位。请确认来源 DCC 设置。` });
+    }
+    if (!declaredUnitMeters) diagnostics.push({ severity: 'warning', code: 'fbx-unit-explicit', message: '未可靠读取 FBX 单位；使用你显式选择的来源单位。' });
+    diagnostics.push({ severity: 'info', code: 'fbx-normalize', message: `来源比例 ${selectedMeters}m/单位；PDS 资产引用规范化为米制 1:1。` });
+  }
 
   return {
-    format: 'fbx', fileName, sizeBytes: bytes.byteLength, sourceUnitScaleMeters: selectedMeters,
+    format: 'fbx', fileName, sizeBytes: bytes.byteLength,
+    sourceUnitScaleMeters: sourceUnit ? assetSourceUnitToMeters(sourceUnit) : undefined,
     valid: !diagnostics.some((item) => item.severity === 'error'), diagnostics, stats: { fbxVersion },
   };
 }
 
-export function inspectAssetBuffer(fileName: string, bytes: ArrayBuffer, fbxSourceUnit: AssetSourceUnit = 'centimeter'): AssetInspection {
+export function inspectAssetBuffer(fileName: string, bytes: ArrayBuffer, fbxSourceUnit?: AssetSourceUnit): AssetInspection {
   const format = assetFormatFromFileName(fileName);
   if (!format) return {
-    format: 'glb', fileName, sizeBytes: bytes.byteLength, sourceUnitScaleMeters: 1, valid: false,
+    format: 'unsupported', fileName, sizeBytes: bytes.byteLength, valid: false,
     diagnostics: [{ severity: 'error', code: 'unsupported-format', message: 'Gate 1 仅接受 .glb 与 .fbx。' }], stats: {},
   };
   return format === 'glb' ? inspectGlb(fileName, bytes) : inspectFbx(fileName, bytes, fbxSourceUnit);
 }
 
 export function buildNormalizedAssetRef(input: AssetRegistrationInput, inspection: AssetInspection): AssetRef {
+  if (!inspection.valid || inspection.format === 'unsupported' || !inspection.sourceUnitScaleMeters) {
+    throw new Error('资产尚未通过导入诊断，不能注册到 Project Asset Registry。');
+  }
   const extension = inspection.format;
   return {
     id: input.id,
