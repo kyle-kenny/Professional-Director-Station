@@ -21,12 +21,12 @@ function localAxes(actor: Actor) {
 export function createActorMotionPath(actor: Actor, duration: number, id: MotionPresetId): ActorKeyframe[] {
   const { forward, right } = localAxes(actor);
   const preset = motionPresetList.find((item) => item.id === id)!;
-  const direction = id === 'walk-forward' ? forward : id === 'retreat' ? forward : id === 'cross-left' ? right : right;
+  const direction = id === 'walk-forward' || id === 'retreat' ? forward : right;
   const sign = id === 'retreat' || id === 'cross-left' ? -1 : 1;
   const start = { ...actor.transform.position };
   const end = add(start, direction, preset.distanceM * sign);
   const mid = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2, z: (start.z + end.z) / 2 };
-  const endTime = Math.max(0.5, duration);
+  const endTime = Math.max(Number.EPSILON, duration);
   return [
     { time: 0, position: start, rotation: { ...actor.transform.rotation }, easing: 'ease-in-out' },
     { time: endTime / 2, position: mid, rotation: { ...actor.transform.rotation }, easing: 'linear' },
