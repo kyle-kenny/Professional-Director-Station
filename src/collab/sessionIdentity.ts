@@ -22,5 +22,5 @@ export function setSessionIdentity(next: SessionIdentity): void {
 export function subscribeSessionIdentity(listener: (value: SessionIdentity) => void): () => void {
   listeners.add(listener);
   listener(identity);
-  return () => listeners.delete(listener);
+  return () => { listeners.delete(listener); };
 }
