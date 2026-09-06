@@ -4,7 +4,7 @@ import { createDefaultProject } from '../domain/defaultProject';
 import { projectSchema } from '../domain/model';
 import { breakDownScript } from '../ai/scriptBreakdown';
 import { analyzeFrameControls, controlBundleHash } from '../ai/controlAnalysis';
-import { buildGenerationRequest, generateLocalStructuralStoryboard, invokePdsAiEndpoint } from '../ai/generation';
+import { buildGenerationRequest, failedGenerationRecord, generateLocalStructuralStoryboard, invokePdsAiEndpoint } from '../ai/generation';
 import { approveGeneratedMedia, approvedGeneratedMediaToAsset, rejectGeneratedMedia } from '../ai/provenance';
 import { canonicalJson } from '../utils/sha256';
 
@@ -70,6 +70,19 @@ describe('Gate 5 AI production', () => {
     expect(generated.bytes?.length).toBeGreaterThan(0);
     expect(generated.record.providerJobId).toBe('job-1');
     expect(generated.record.profile.modelId).toBe('video-x');
+  });
+
+  it('records failed attempts with the same source, prompt and control provenance', () => {
+    const project = createDefaultProject();
+    const profile: AiModelProfile = { id: 'studio-video', label: 'Studio Video', provider: 'pds-http', endpoint: 'https://ai.example.test/v1/generate', modelId: 'video-x', revision: '1', tasks: ['video'], defaultParameters: {}, enabled: true };
+    const request = buildGenerationRequest(project, project.sequences[0].shots[0], 'video', 0, profile, 'Keep lens.', 'No extra cast.');
+    const failed = failedGenerationRecord(request, new Error('provider unavailable'), '2026-01-01T00:00:00.000Z');
+    expect(failed.status).toBe('failed');
+    expect(failed.error).toContain('provider unavailable');
+    expect(failed.sourceShotHashSha256).toBe(request.source.shotHashSha256);
+    expect(failed.promptHashSha256).toBe(request.promptHashSha256);
+    expect(failed.controlHashSha256).toBe(request.controlHashSha256);
+    expect(failed.profile).toEqual(request.profile);
   });
 
   it('rejects insecure non-local remote inference endpoints', () => {
