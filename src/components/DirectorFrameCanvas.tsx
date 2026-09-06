@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useDirectorStore } from '../store/directorStore';
-import { projectWorldToFrame } from '../utils/math';
-import { sampleActorTransform, sampleCamera } from '../utils/animation';
+import { renderDirectorFrame } from '../rendering/directorFrameRenderer';
+import { timeToFrame } from '../editorial/timelineEngine';
 
 export function DirectorFrameCanvas() {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -9,31 +9,19 @@ export function DirectorFrameCanvas() {
   const playhead = useDirectorStore((s) => s.playhead);
   useEffect(() => {
     const canvas = ref.current; if (!canvas) return;
-    const ctx = canvas.getContext('2d')!; const dpr = Math.min(devicePixelRatio, 2);
+    const ctx = canvas.getContext('2d')!;
+    const dpr = Math.min(devicePixelRatio, 2);
     const draw = () => {
-      const rect = canvas.getBoundingClientRect(); canvas.width = rect.width * dpr; canvas.height = rect.height * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      const w = rect.width, h = rect.height; const camera = sampleCamera(shot.camera, playhead);
-      ctx.fillStyle = '#101419'; ctx.fillRect(0, 0, w, h);
-      ctx.strokeStyle = 'rgba(255,255,255,.2)'; ctx.lineWidth = 1;
-      [1 / 3, 2 / 3].forEach((v) => { ctx.beginPath(); ctx.moveTo(w * v, 0); ctx.lineTo(w * v, h); ctx.stroke(); ctx.beginPath(); ctx.moveTo(0, h * v); ctx.lineTo(w, h * v); ctx.stroke(); });
-      ctx.strokeStyle = 'rgba(255,209,102,.45)'; ctx.strokeRect(w * .05, h * .05, w * .9, h * .9);
-      shot.actors.forEach((actor, index) => {
-        const transform = sampleActorTransform(actor, playhead);
-        const foot = projectWorldToFrame(transform.position, camera, w / h);
-        const head = projectWorldToFrame({ x: transform.position.x, y: transform.position.y + actor.eyeHeight, z: transform.position.z }, camera, w / h);
-        if (!foot.visible && !head.visible) return;
-        const x = head.x * w, y = head.y * h, bottom = foot.y * h, bodyH = Math.max(24, bottom - y);
-        ctx.strokeStyle = index % 2 ? '#d9a36d' : '#7db6e8'; ctx.lineWidth = 4;
-        ctx.beginPath(); ctx.arc(x, y, Math.max(8, bodyH * .09), 0, Math.PI * 2); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(x, y + bodyH * .1); ctx.lineTo(x, bottom); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(x - bodyH * .22, y + bodyH * .35); ctx.lineTo(x + bodyH * .22, y + bodyH * .35); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(x, bottom); ctx.lineTo(x - bodyH * .14, Math.min(h, bottom + bodyH * .25)); ctx.moveTo(x, bottom); ctx.lineTo(x + bodyH * .14, Math.min(h, bottom + bodyH * .25)); ctx.stroke();
-        ctx.fillStyle = '#dfe7ef'; ctx.font = '12px sans-serif'; ctx.fillText(actor.name, x + 12, y - 8);
-      });
-      ctx.fillStyle = '#dbe6ef'; ctx.font = '13px ui-monospace, monospace'; ctx.fillText(`${shot.name}  |  T ${playhead.toFixed(2)}s  |  ${camera.focalLengthMm.toFixed(0)}mm  |  ${camera.sensorWidthMm}mm sensor`, 18, h - 22);
-      ctx.fillStyle = 'rgba(255,255,255,.55)'; ctx.fillText('Rule of thirds · Action safe · Director structural frame', 18, 24);
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = Math.max(1, Math.round(rect.width * dpr));
+      canvas.height = Math.max(1, Math.round(rect.height * dpr));
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      renderDirectorFrame(ctx, shot, timeToFrame(playhead, shot.fps), rect.width, rect.height);
     };
-    draw(); const ro = new ResizeObserver(draw); ro.observe(canvas); return () => ro.disconnect();
+    draw();
+    const ro = new ResizeObserver(draw);
+    ro.observe(canvas);
+    return () => ro.disconnect();
   }, [shot, playhead]);
-  return <div className="canvas-workspace"><div className="canvas-header"><span className="chip">Director Frame / 构图结构图</span><span>由同一时间点的3D机位与人物位置计算</span></div><canvas ref={ref} /></div>;
+  return <div className="canvas-workspace"><div className="canvas-header"><span className="chip">Director Frame / 构图结构图</span><span>与时间线/MP4共享同一逐帧渲染器</span></div><canvas ref={ref} /></div>;
 }
