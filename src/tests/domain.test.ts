@@ -30,7 +30,7 @@ describe('industrial project contract',()=>{
   for(const actor of shot.actors){const p=projectWorldToFrame({x:actor.transform.position.x,y:actor.eyeHeight,z:actor.transform.position.z},shot.camera);expect(p.visible).toBe(true);expect(p.x).toBeGreaterThan(0);expect(p.x).toBeLessThan(1)}
  });
  it('rejects non-normalized asset metadata',()=>{
-  const errors=validateAssetForPipeline({id:'Bad Asset',name:'Bad',category:'prop',version:'v1',uri:'chair.glb',license:'MIT',owner:'test',unitScaleMeters:.01,diagnostics:[]});
+  const errors=validateAssetForPipeline({id:'Bad Asset',name:'Bad',category:'prop',version:'v1',uri:'chair.glb',license:'MIT',owner:'test',unitScaleMeters:.01,provenance:{source:'unknown'},diagnostics:[]});
   expect(errors.length).toBeGreaterThanOrEqual(3);
  });
 });
