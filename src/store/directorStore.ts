@@ -4,6 +4,8 @@ import { createDefaultProject } from '../domain/defaultProject';
 import { lightingPresets, type LightingPresetId } from '../domain/presets';
 import { createActorFromPreset, type ActorPresetId } from '../domain/actorLibrary';
 import { createCameraRigPath, type CameraRigPresetId } from '../domain/cameraRigs';
+import { createActorMotionPath, type MotionPresetId } from '../domain/actorMotions';
+import { poseLibrary, type PosePresetId } from '../domain/poseLibrary';
 import { sampleActorTransform, sampleCamera } from '../utils/animation';
 import { recordProjectHistory, redoProjectHistory, undoProjectHistory } from './projectHistory';
 
@@ -49,6 +51,8 @@ type State = {
   getActiveShot: () => Shot;
   updateActorTransformAxis: (actorId: string, field: keyof Transform, axis: keyof Vec3, value: number) => void;
   setActorTransform: (actorId: string, transform: Transform) => void;
+  applyActorPose: (actorId: string, id: PosePresetId) => void;
+  applyActorMotionPreset: (actorId: string, id: MotionPresetId) => void;
   addActorKeyframe: (actorId: string) => void;
   removeActorKeyframe: (actorId: string, time: number) => void;
   updateCamera: (field: 'focalLengthMm' | 'aperture' | 'focusDistanceM', value: number) => void;
@@ -57,6 +61,10 @@ type State = {
   removeCameraKeyframe: (time: number) => void;
   applyCameraRigPreset: (id: CameraRigPresetId) => void;
   applyLightingPreset: (id: LightingPresetId) => void;
+  updateLight: (lightId: string, field: 'intensity' | 'colorTemperatureK', value: number) => void;
+  updateLightVector: (lightId: string, field: 'position' | 'target', axis: keyof Vec3, value: number) => void;
+  setLightCastShadow: (lightId: string, value: boolean) => void;
+  setExposureEv: (value: number) => void;
   setShotStatus: (status: Shot['status']) => void;
   addAudioPlaceholder: (kind: 'dialogue' | 'music' | 'sfx' | 'ambience') => void;
   addActorPreset: (presetId: ActorPresetId) => void;
@@ -178,6 +186,19 @@ export const useDirectorStore = create<State>((set, get) => ({
       actor.transform.scale = { ...normalized.scale };
     } else actor.transform = normalized;
   })),
+  applyActorPose: (actorId, id) => set((state) => commitActive(state, (shot) => {
+    const actor = shot.actors.find((a) => a.id === actorId);
+    if (!actor) return;
+    actor.pose = id;
+    actor.action = poseLibrary[id].action;
+  })),
+  applyActorMotionPreset: (actorId, id) => set((state) => commitActive(state, (shot) => {
+    const actor = shot.actors.find((a) => a.id === actorId);
+    if (!actor) return;
+    actor.path = createActorMotionPath(actor, shot.duration, id);
+    actor.action = id;
+    actor.pose = 'walk-stride';
+  })),
   addActorKeyframe: (actorId) => set((state) => commitActive(state, (shot) => {
     const actor = shot.actors.find((a) => a.id === actorId);
     if (!actor) return;
@@ -214,6 +235,26 @@ export const useDirectorStore = create<State>((set, get) => ({
   })),
   applyCameraRigPreset: (id) => set((state) => commitActive(state, (shot) => { shot.camera.path = createCameraRigPath(shot.camera, shot.duration, id); })),
   applyLightingPreset: (id) => set((state) => commitActive(state, (shot) => { shot.lights = structuredClone(lightingPresets[id].lights); })),
+  updateLight: (lightId, field, value) => set((state) => commitActive(state, (shot) => {
+    const light = shot.lights.find((item) => item.id === lightId);
+    if (!light) return;
+    if (field === 'intensity') light.intensity = Math.max(0, value);
+    else light.colorTemperatureK = Math.min(20000, Math.max(1000, value));
+  })),
+  updateLightVector: (lightId, field, axis, value) => set((state) => commitActive(state, (shot) => {
+    const light = shot.lights.find((item) => item.id === lightId);
+    if (!light) return;
+    if (field === 'position') light.position[axis] = value;
+    else {
+      if (!light.target) light.target = { x: 0, y: 1.2, z: 0 };
+      light.target[axis] = value;
+    }
+  })),
+  setLightCastShadow: (lightId, value) => set((state) => commitActive(state, (shot) => {
+    const light = shot.lights.find((item) => item.id === lightId);
+    if (light) light.castShadow = value;
+  })),
+  setExposureEv: (value) => set((state) => commitActive(state, (shot) => { shot.exposureEv = Math.min(8, Math.max(-8, value)); })),
   setShotStatus: (status) => set((state) => commitActive(state, (shot) => { shot.status = status; })),
   addAudioPlaceholder: (kind) => set((state) => commitActive(state, (shot) => {
     const index = shot.audio.length + 1;
