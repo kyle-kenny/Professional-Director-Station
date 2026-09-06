@@ -1,4 +1,4 @@
-import { Box, Cable, Download, Film, LayoutDashboard, Map, Redo2, Undo2, Upload, Users } from 'lucide-react';
+import { Box, Cable, Download, Film, LayoutDashboard, Map, Redo2, Sparkles, Undo2, Upload, Users } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { useDirectorStore } from '../store/directorStore';
 
@@ -14,5 +14,6 @@ export function TopBar() {
     <button className={mode === 'timeline' ? 'active' : ''} onClick={() => setMode('timeline')}><Film size={16}/>时间线/声音</button>
     <button className={mode === 'review' ? 'active' : ''} onClick={() => setMode('review')}><Users size={16}/>协作/审片</button>
     <button className={mode === 'pipeline' ? 'active' : ''} onClick={() => setMode('pipeline')}><Cable size={16}/>Pipeline</button>
+    <button className={mode === 'ai' ? 'active' : ''} onClick={() => setMode('ai')}><Sparkles size={16}/>AI Production</button>
   </nav><div className="top-actions"><button onClick={undo} disabled={!canUndo} title="撤销 Ctrl/Cmd+Z" aria-label="撤销"><Undo2 size={16}/></button><button onClick={redo} disabled={!canRedo} title="重做 Ctrl/Cmd+Shift+Z / Ctrl+Y" aria-label="重做"><Redo2 size={16}/></button><input ref={input} type="file" accept="application/json,.json" hidden onChange={(e) => open(e.target.files?.[0])}/><button onClick={() => input.current?.click()} title="导入工程"><Upload size={16}/></button><button onClick={download} title="导出工程"><Download size={16}/></button></div></header>;
 }
