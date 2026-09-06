@@ -4,6 +4,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { useDirectorStore } from '../store/directorStore';
 import { focalLengthToVerticalFovDeg } from '../utils/math';
+import { sampleActorTransform, sampleCamera } from '../utils/animation';
 import type { Actor } from '../domain/model';
 
 function tempToColor(k: number, fallback: string) {
@@ -88,10 +89,12 @@ export function DirectorViewport() {
   const [viewMode, setViewMode] = useState<'director' | 'shot'>('director');
   const viewModeRef = useRef(viewMode);
   const shot = useDirectorStore((s) => s.getActiveShot());
+  const playhead = useDirectorStore((s) => s.playhead);
   const selectedObjectId = useDirectorStore((s) => s.selectedObjectId);
   const selectObject = useDirectorStore((s) => s.selectObject);
   const transformMode = useDirectorStore((s) => s.transformMode);
   const setTransformMode = useDirectorStore((s) => s.setTransformMode);
+  const sampledCamera = sampleCamera(shot.camera, playhead);
 
   useEffect(() => { viewModeRef.current = viewMode; }, [viewMode]);
 
@@ -239,9 +242,10 @@ export function DirectorViewport() {
 
     shot.actors.forEach((actor) => {
       const group = buildDirectorActor(actor);
-      group.position.set(actor.transform.position.x, actor.transform.position.y, actor.transform.position.z);
-      group.rotation.set(actor.transform.rotation.x, actor.transform.rotation.y, actor.transform.rotation.z);
-      group.scale.set(actor.transform.scale.x, actor.transform.scale.y, actor.transform.scale.z);
+      const transform = sampleActorTransform(actor, playhead);
+      group.position.set(transform.position.x, transform.position.y, transform.position.z);
+      group.rotation.set(transform.rotation.x, transform.rotation.y, transform.rotation.z);
+      group.scale.set(transform.scale.x, transform.scale.y, transform.scale.z);
       r.content.add(group);
       r.actorObjects.set(actor.id, group);
     });
@@ -272,9 +276,10 @@ export function DirectorViewport() {
       }
     });
 
-    r.shotCamera.fov = focalLengthToVerticalFovDeg(shot.camera.focalLengthMm, shot.camera.sensorWidthMm, r.shotCamera.aspect);
-    r.shotCamera.position.set(shot.camera.position.x, shot.camera.position.y, shot.camera.position.z);
-    r.shotCamera.lookAt(shot.camera.target.x, shot.camera.target.y, shot.camera.target.z);
+    const cameraAtTime = sampleCamera(shot.camera, playhead);
+    r.shotCamera.fov = focalLengthToVerticalFovDeg(cameraAtTime.focalLengthMm, cameraAtTime.sensorWidthMm, r.shotCamera.aspect);
+    r.shotCamera.position.set(cameraAtTime.position.x, cameraAtTime.position.y, cameraAtTime.position.z);
+    r.shotCamera.lookAt(cameraAtTime.target.x, cameraAtTime.target.y, cameraAtTime.target.z);
     r.shotCamera.updateProjectionMatrix();
     r.content.add(new THREE.CameraHelper(r.shotCamera));
 
@@ -283,7 +288,7 @@ export function DirectorViewport() {
       r.transform.camera = r.editorCamera;
       r.transform.attach(selected);
     }
-  }, [shot, selectedObjectId, viewMode]);
+  }, [shot, selectedObjectId, viewMode, playhead]);
 
   return <div className="viewport-shell">
     <div className="viewport-toolbar">
@@ -294,7 +299,7 @@ export function DirectorViewport() {
       <button className={transformMode === 'rotate' ? 'active' : ''} onClick={() => setTransformMode('rotate')} title="E">旋转 E</button>
       <button className={transformMode === 'scale' ? 'active' : ''} onClick={() => setTransformMode('scale')} title="R">缩放 R</button>
       <span>5cm · 15° · 5% Snap</span>
-      <span className="lens-readout">{shot.camera.focalLengthMm}mm · f/{shot.camera.aperture}</span>
+      <span className="lens-readout">T {playhead.toFixed(2)}s · {sampledCamera.focalLengthMm.toFixed(0)}mm · f/{sampledCamera.aperture}</span>
     </div>
     <div className="viewport" ref={mountRef} />
   </div>;

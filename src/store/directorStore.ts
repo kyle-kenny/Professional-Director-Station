@@ -1,8 +1,10 @@
 import { create } from 'zustand';
-import { projectSchema, type DirectorProject, type Shot, type Transform, type Vec3, type WorkspaceMode } from '../domain/model';
+import { projectSchema, type Actor, type CameraKeyframe, type DirectorProject, type Shot, type Transform, type Vec3, type WorkspaceMode } from '../domain/model';
 import { createDefaultProject } from '../domain/defaultProject';
 import { lightingPresets, type LightingPresetId } from '../domain/presets';
 import { createActorFromPreset, type ActorPresetId } from '../domain/actorLibrary';
+import { createCameraRigPath, type CameraRigPresetId } from '../domain/cameraRigs';
+import { sampleActorTransform, sampleCamera } from '../utils/animation';
 import { recordProjectHistory, redoProjectHistory, undoProjectHistory } from './projectHistory';
 
 const STORAGE_KEY = 'pds.project.v1';
@@ -47,8 +49,13 @@ type State = {
   getActiveShot: () => Shot;
   updateActorTransformAxis: (actorId: string, field: keyof Transform, axis: keyof Vec3, value: number) => void;
   setActorTransform: (actorId: string, transform: Transform) => void;
+  addActorKeyframe: (actorId: string) => void;
+  removeActorKeyframe: (actorId: string, time: number) => void;
   updateCamera: (field: 'focalLengthMm' | 'aperture' | 'focusDistanceM', value: number) => void;
   updateCameraVector: (field: 'position' | 'target', axis: keyof Vec3, value: number) => void;
+  addCameraKeyframe: () => void;
+  removeCameraKeyframe: (time: number) => void;
+  applyCameraRigPreset: (id: CameraRigPresetId) => void;
   applyLightingPreset: (id: LightingPresetId) => void;
   setShotStatus: (status: Shot['status']) => void;
   addAudioPlaceholder: (kind: 'dialogue' | 'music' | 'sfx' | 'ambience') => void;
@@ -79,6 +86,35 @@ function normalizeTransform(transform: Transform): Transform {
   };
 }
 
+function snapShotTime(time: number, shot: Shot): number {
+  return Math.min(shot.duration, Math.max(0, Math.round(time * shot.fps) / shot.fps));
+}
+
+function upsertActorKeyframe(actor: Actor, shot: Shot, time: number, transform: Transform) {
+  const snapped = snapShotTime(time, shot);
+  const tolerance = 0.5 / shot.fps;
+  const existing = actor.path.find((frame) => Math.abs(frame.time - snapped) <= tolerance);
+  const frame = {
+    time: snapped,
+    position: { ...transform.position },
+    rotation: { ...transform.rotation },
+    easing: existing?.easing ?? 'ease-in-out' as const,
+  };
+  if (existing) Object.assign(existing, frame);
+  else actor.path.push(frame);
+  actor.path.sort((a, b) => a.time - b.time);
+}
+
+function upsertCameraKeyframe(shot: Shot, time: number, camera: CameraKeyframe) {
+  const snapped = snapShotTime(time, shot);
+  const tolerance = 0.5 / shot.fps;
+  const existing = shot.camera.path.find((frame) => Math.abs(frame.time - snapped) <= tolerance);
+  const frame: CameraKeyframe = { ...camera, time: snapped, easing: existing?.easing ?? camera.easing ?? 'ease-in-out' };
+  if (existing) Object.assign(existing, frame);
+  else shot.camera.path.push(frame);
+  shot.camera.path.sort((a, b) => a.time - b.time);
+}
+
 function commitActive(state: State, fn: (shot: Shot) => void): Pick<State, 'project' | 'undoStack' | 'redoStack'> {
   const history = recordProjectHistory(state.project, { undoStack: state.undoStack, redoStack: state.redoStack });
   const project = mutateActive(state.project, state.activeSequenceId, state.activeShotId, fn);
@@ -94,12 +130,12 @@ export const useDirectorStore = create<State>((set, get) => ({
   activeShotId: initial.sequences[0].shots[0].id,
   mode: '3d',
   playhead: 0,
-  selectedObjectId: 'actor-a',
+  selectedObjectId: initial.sequences[0].shots[0].actors[0]?.id,
   transformMode: 'translate',
   undoStack: [],
   redoStack: [],
   setMode: (mode) => set({ mode }),
-  setPlayhead: (playhead) => set({ playhead }),
+  setPlayhead: (playhead) => set((state) => ({ playhead: Math.min(state.getActiveShot().duration, Math.max(0, playhead)) })),
   selectObject: (selectedObjectId) => set({ selectedObjectId }),
   setTransformMode: (transformMode) => set({ transformMode }),
   undo: () => set((state) => {
@@ -125,14 +161,58 @@ export const useDirectorStore = create<State>((set, get) => ({
   updateActorTransformAxis: (actorId, field, axis, value) => set((state) => commitActive(state, (shot) => {
     const actor = shot.actors.find((a) => a.id === actorId);
     if (!actor) return;
-    actor.transform[field][axis] = field === 'scale' ? Math.max(0.01, value) : value;
+    if (actor.path.length > 0 && field !== 'scale') {
+      const sampled = sampleActorTransform(actor, state.playhead);
+      sampled[field][axis] = value;
+      upsertActorKeyframe(actor, shot, state.playhead, sampled);
+    } else {
+      actor.transform[field][axis] = field === 'scale' ? Math.max(0.01, value) : value;
+    }
   })),
   setActorTransform: (actorId, transform) => set((state) => commitActive(state, (shot) => {
     const actor = shot.actors.find((a) => a.id === actorId);
-    if (actor) actor.transform = normalizeTransform(transform);
+    if (!actor) return;
+    const normalized = normalizeTransform(transform);
+    if (actor.path.length > 0) {
+      upsertActorKeyframe(actor, shot, state.playhead, normalized);
+      actor.transform.scale = { ...normalized.scale };
+    } else actor.transform = normalized;
   })),
-  updateCamera: (field, value) => set((state) => commitActive(state, (shot) => { shot.camera[field] = value; })),
-  updateCameraVector: (field, axis, value) => set((state) => commitActive(state, (shot) => { shot.camera[field][axis] = value; })),
+  addActorKeyframe: (actorId) => set((state) => commitActive(state, (shot) => {
+    const actor = shot.actors.find((a) => a.id === actorId);
+    if (!actor) return;
+    upsertActorKeyframe(actor, shot, state.playhead, sampleActorTransform(actor, state.playhead));
+  })),
+  removeActorKeyframe: (actorId, time) => set((state) => commitActive(state, (shot) => {
+    const actor = shot.actors.find((a) => a.id === actorId);
+    if (!actor) return;
+    const snapped = snapShotTime(time, shot);
+    const tolerance = 0.5 / shot.fps;
+    actor.path = actor.path.filter((frame) => Math.abs(frame.time - snapped) > tolerance);
+  })),
+  updateCamera: (field, value) => set((state) => commitActive(state, (shot) => {
+    if (field === 'focalLengthMm' && shot.camera.path.length > 0) {
+      const sampled = sampleCamera(shot.camera, state.playhead);
+      upsertCameraKeyframe(shot, state.playhead, { time: state.playhead, position: sampled.position, target: sampled.target, focalLengthMm: value, easing: 'ease-in-out' });
+    } else shot.camera[field] = value;
+  })),
+  updateCameraVector: (field, axis, value) => set((state) => commitActive(state, (shot) => {
+    if (shot.camera.path.length > 0) {
+      const sampled = sampleCamera(shot.camera, state.playhead);
+      sampled[field][axis] = value;
+      upsertCameraKeyframe(shot, state.playhead, { time: state.playhead, position: sampled.position, target: sampled.target, focalLengthMm: sampled.focalLengthMm, easing: 'ease-in-out' });
+    } else shot.camera[field][axis] = value;
+  })),
+  addCameraKeyframe: () => set((state) => commitActive(state, (shot) => {
+    const sampled = sampleCamera(shot.camera, state.playhead);
+    upsertCameraKeyframe(shot, state.playhead, { time: state.playhead, position: sampled.position, target: sampled.target, focalLengthMm: sampled.focalLengthMm, easing: 'ease-in-out' });
+  })),
+  removeCameraKeyframe: (time) => set((state) => commitActive(state, (shot) => {
+    const snapped = snapShotTime(time, shot);
+    const tolerance = 0.5 / shot.fps;
+    shot.camera.path = shot.camera.path.filter((frame) => Math.abs(frame.time - snapped) > tolerance);
+  })),
+  applyCameraRigPreset: (id) => set((state) => commitActive(state, (shot) => { shot.camera.path = createCameraRigPath(shot.camera, shot.duration, id); })),
   applyLightingPreset: (id) => set((state) => commitActive(state, (shot) => { shot.lights = structuredClone(lightingPresets[id].lights); })),
   setShotStatus: (status) => set((state) => commitActive(state, (shot) => { shot.status = status; })),
   addAudioPlaceholder: (kind) => set((state) => commitActive(state, (shot) => {
