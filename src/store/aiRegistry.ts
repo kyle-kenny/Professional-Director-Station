@@ -4,7 +4,7 @@ import { requirePermission } from '../collab/authorization';
 import { getSessionIdentity } from '../collab/sessionIdentity';
 import { timeToFrame } from '../editorial/timelineEngine';
 import { breakDownScript } from '../ai/scriptBreakdown';
-import { buildGenerationRequest, generateLocalStructuralStoryboard, invokePdsAiEndpoint } from '../ai/generation';
+import { buildGenerationRequest, failedGenerationRecord, generateLocalStructuralStoryboard, invokePdsAiEndpoint } from '../ai/generation';
 import { approveGeneratedMedia, approvedGeneratedMediaToAsset, rejectGeneratedMedia } from '../ai/provenance';
 import { putAiGeneratedMedia } from '../storage/aiMediaStore';
 import { recordProjectHistory } from './projectHistory';
@@ -80,15 +80,21 @@ export async function generateAiMedia(input: {
   if (!profile) throw new Error(`AI profile ${input.profileId} not found.`);
   const frame = timeToFrame(state.playhead, shot.fps);
   const request = buildGenerationRequest(project, shot, input.task, frame, profile, input.prompt, input.negativePrompt ?? '', input.parameters ?? {});
-  const generated = profile.provider === 'local-structural'
-    ? generateLocalStructuralStoryboard(request)
-    : await invokePdsAiEndpoint(profile, request, input.runtimeToken);
-  if (generated.bytes && generated.record.uri?.startsWith('pds://ai/')) await putAiGeneratedMedia(generated.record.uri, generated.bytes, generated.record.mimeType);
-  commitProject((next) => {
-    if (next.ai.outputs.some((item) => item.id === generated.record.id)) throw new Error(`Generated output ${generated.record.id} already exists.`);
-    next.ai.outputs.unshift(generated.record);
-  });
-  return generated.record;
+  try {
+    const generated = profile.provider === 'local-structural'
+      ? generateLocalStructuralStoryboard(request)
+      : await invokePdsAiEndpoint(profile, request, input.runtimeToken);
+    if (generated.bytes && generated.record.uri?.startsWith('pds://ai/')) await putAiGeneratedMedia(generated.record.uri, generated.bytes, generated.record.mimeType);
+    commitProject((next) => {
+      if (next.ai.outputs.some((item) => item.id === generated.record.id)) throw new Error(`Generated output ${generated.record.id} already exists.`);
+      next.ai.outputs.unshift(generated.record);
+    });
+    return generated.record;
+  } catch (error) {
+    const failed = failedGenerationRecord(request, error);
+    commitProject((next) => { next.ai.outputs.unshift(failed); });
+    throw error;
+  }
 }
 
 export function approveAiOutput(outputId: string): void {
