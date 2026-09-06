@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useDirectorStore } from '../store/directorStore';
-import { sampleActorTransform, sampleCamera } from '../utils/animation';
+import { sampleActorTransform, sampleCamera, sampleLight } from '../utils/animation';
 
 const SCALE = 48;
 const actorTag = (sex: 'male' | 'female', age: 'child' | 'teen' | 'adult' | 'elderly') => {
@@ -30,6 +30,7 @@ export function FloorPlanCanvas() {
     const world = (x: number, z: number, w: number, h: number) => ({ x: w / 2 + x * SCALE, y: h / 2 + z * SCALE });
     const draw = (w: number, h: number) => {
       const sampledActors = shot.actors.map((actor) => ({ actor, transform: sampleActorTransform(actor, playhead) }));
+      const sampledLights = shot.lights.map((light) => ({ source: light, light: sampleLight(light, playhead) }));
       const camera = sampleCamera(shot.camera, playhead);
       ctx.clearRect(0, 0, w, h);
       ctx.fillStyle = '#14181e'; ctx.fillRect(0, 0, w, h);
@@ -65,10 +66,21 @@ export function FloorPlanCanvas() {
         ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
       });
 
-      shot.lights.filter((l) => l.type !== 'ambient').forEach((l) => {
-        const p = world(l.position.x, l.position.z, w, h);
-        ctx.strokeStyle = '#ffe19a'; ctx.lineWidth = 2; ctx.strokeRect(p.x - 8, p.y - 8, 16, 16);
-        ctx.fillStyle = '#ffe19a'; ctx.font = '11px sans-serif'; ctx.fillText(l.name, p.x + 12, p.y + 4);
+      sampledLights.filter(({ light }) => light.type !== 'ambient').forEach(({ source, light }) => {
+        const p = world(light.position.x, light.position.z, w, h);
+        const isSelected = source.id === selected;
+        ctx.strokeStyle = isSelected ? '#ffd166' : '#ffe19a';
+        ctx.fillStyle = isSelected ? 'rgba(255,209,102,.22)' : 'rgba(255,225,154,.08)';
+        ctx.lineWidth = isSelected ? 3 : 2;
+        ctx.fillRect(p.x - 9, p.y - 9, 18, 18);
+        ctx.strokeRect(p.x - 9, p.y - 9, 18, 18);
+        ctx.fillStyle = isSelected ? '#ffd166' : '#ffe19a'; ctx.font = '11px sans-serif'; ctx.fillText(light.name, p.x + 13, p.y + 4);
+        if (isSelected && light.target) {
+          const target = world(light.target.x, light.target.z, w, h);
+          ctx.setLineDash([5, 4]);
+          ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(target.x, target.y); ctx.stroke();
+          ctx.setLineDash([]);
+        }
       });
     };
     resize();
@@ -83,6 +95,11 @@ export function FloorPlanCanvas() {
       const transform = sampleActorTransform(actor, playhead);
       const x = rect.width / 2 + transform.position.x * SCALE, y = rect.height / 2 + transform.position.z * SCALE;
       if (Math.hypot(mx - x, my - y) < 22) { select(actor.id); return; }
+    }
+    for (const source of shot.lights.filter((item) => item.type !== 'ambient')) {
+      const light = sampleLight(source, playhead);
+      const x = rect.width / 2 + light.position.x * SCALE, y = rect.height / 2 + light.position.z * SCALE;
+      if (Math.abs(mx - x) < 18 && Math.abs(my - y) < 18) { select(source.id); return; }
     }
   };
 

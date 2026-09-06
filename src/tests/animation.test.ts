@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createDefaultProject } from '../domain/defaultProject';
 import { createCameraRigPath } from '../domain/cameraRigs';
 import { projectSchema } from '../domain/model';
-import { sampleActorTransform, sampleCamera } from '../utils/animation';
+import { sampleActorTransform, sampleCamera, sampleLight } from '../utils/animation';
 
 const distanceXZ = (a: { x: number; z: number }, b: { x: number; z: number }) => Math.hypot(a.x - b.x, a.z - b.z);
 
@@ -30,14 +30,29 @@ describe('deterministic director animation', () => {
     expect(sample.focalLengthMm).toBe(60);
   });
 
-  it('keeps legacy path data parseable with default easing', () => {
+  it('samples light position, target, intensity and color temperature', () => {
+    const light = createDefaultProject().sequences[0].shots[0].lights[1];
+    light.path = [
+      { time: 0, position: { x: 0, y: 2, z: 4 }, target: { x: 0, y: 1, z: 0 }, intensity: 2, colorTemperatureK: 3200, easing: 'linear' },
+      { time: 2, position: { x: 4, y: 6, z: 0 }, target: { x: 2, y: 1, z: 0 }, intensity: 6, colorTemperatureK: 5600, easing: 'linear' },
+    ];
+    const sample = sampleLight(light, 1);
+    expect(sample.position).toEqual({ x: 2, y: 4, z: 2 });
+    expect(sample.target).toEqual({ x: 1, y: 1, z: 0 });
+    expect(sample.intensity).toBe(4);
+    expect(sample.colorTemperatureK).toBe(4400);
+  });
+
+  it('keeps legacy path data parseable with default easing and light tracks', () => {
     const project = createDefaultProject();
     const actor = project.sequences[0].shots[0].actors[0];
     actor.path = [{ time: 1, position: { x: 1, y: 0, z: 0 }, easing: 'ease-in-out' }];
     const legacy = JSON.parse(JSON.stringify(project));
     delete legacy.sequences[0].shots[0].actors[0].path[0].easing;
+    delete legacy.sequences[0].shots[0].lights[0].path;
     const parsed = projectSchema.parse(legacy);
     expect(parsed.sequences[0].shots[0].actors[0].path[0].easing).toBe('ease-in-out');
+    expect(parsed.sequences[0].shots[0].lights[0].path).toEqual([]);
   });
 
   it('builds director camera rigs with stable geometry', () => {

@@ -30,6 +30,16 @@ export const cameraKeyframeSchema = z.object({
 });
 export type CameraKeyframe = z.infer<typeof cameraKeyframeSchema>;
 
+export const lightKeyframeSchema = z.object({
+  time: z.number().nonnegative(),
+  position: vec3Schema,
+  target: vec3Schema.optional(),
+  intensity: z.number().nonnegative().optional(),
+  colorTemperatureK: z.number().min(1000).max(20000).optional(),
+  easing: easingSchema.default('ease-in-out'),
+});
+export type LightKeyframe = z.infer<typeof lightKeyframeSchema>;
+
 export const assetRefSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
@@ -88,6 +98,7 @@ export const lightSchema = z.object({
   colorTemperatureK: z.number().min(1000).max(20000),
   color: z.string().regex(/^#[0-9A-Fa-f]{6}$/),
   castShadow: z.boolean().default(true),
+  path: z.array(lightKeyframeSchema).default([]),
 });
 export type DirectorLight = z.infer<typeof lightSchema>;
 
@@ -112,6 +123,7 @@ export const shotSchema = z.object({
   script: z.string().default(''),
   actors: z.array(actorSchema),
   camera: cameraSchema,
+  exposureEv: z.number().min(-8).max(8).default(0),
   lights: z.array(lightSchema),
   audio: z.array(audioClipSchema),
   notes: z.array(z.object({ id: z.string(), author: z.string(), time: z.number().nonnegative(), text: z.string() })).default([]),
