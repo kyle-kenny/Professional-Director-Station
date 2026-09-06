@@ -1,10 +1,13 @@
 import { create } from 'zustand';
-import { projectSchema, type DirectorProject, type Shot, type Vec3, type WorkspaceMode } from '../domain/model';
+import { projectSchema, type DirectorProject, type Shot, type Transform, type Vec3, type WorkspaceMode } from '../domain/model';
 import { createDefaultProject } from '../domain/defaultProject';
 import { lightingPresets, type LightingPresetId } from '../domain/presets';
 import { createActorFromPreset, type ActorPresetId } from '../domain/actorLibrary';
+import { recordProjectHistory, redoProjectHistory, undoProjectHistory } from './projectHistory';
 
 const STORAGE_KEY = 'pds.project.v1';
+
+export type TransformMode = 'translate' | 'rotate' | 'scale';
 
 function loadProject(): DirectorProject {
   try {
@@ -17,8 +20,12 @@ function loadProject(): DirectorProject {
 }
 
 function persist(project: DirectorProject) {
-  project.updatedAt = new Date().toISOString();
   localStorage.setItem(STORAGE_KEY, JSON.stringify(project));
+}
+
+function stamp(project: DirectorProject): DirectorProject {
+  project.updatedAt = new Date().toISOString();
+  return project;
 }
 
 type State = {
@@ -28,12 +35,18 @@ type State = {
   mode: WorkspaceMode;
   playhead: number;
   selectedObjectId?: string;
+  transformMode: TransformMode;
+  undoStack: DirectorProject[];
+  redoStack: DirectorProject[];
   setMode: (mode: WorkspaceMode) => void;
   setPlayhead: (time: number) => void;
   selectObject: (id?: string) => void;
+  setTransformMode: (mode: TransformMode) => void;
+  undo: () => void;
+  redo: () => void;
   getActiveShot: () => Shot;
-  updateActorPosition: (actorId: string, axis: keyof Vec3, value: number) => void;
-  setActorPosition: (actorId: string, position: Vec3) => void;
+  updateActorTransformAxis: (actorId: string, field: keyof Transform, axis: keyof Vec3, value: number) => void;
+  setActorTransform: (actorId: string, transform: Transform) => void;
   updateCamera: (field: 'focalLengthMm' | 'aperture' | 'focusDistanceM', value: number) => void;
   updateCameraVector: (field: 'position' | 'target', axis: keyof Vec3, value: number) => void;
   applyLightingPreset: (id: LightingPresetId) => void;
@@ -51,9 +64,26 @@ function mutateActive(project: DirectorProject, sequenceId: string, shotId: stri
   const shot = seq?.shots.find((s) => s.id === shotId);
   if (!shot) throw new Error('Active shot not found');
   fn(shot);
-  clone.updatedAt = new Date().toISOString();
-  persist(clone);
-  return clone;
+  return stamp(clone);
+}
+
+function normalizeTransform(transform: Transform): Transform {
+  return {
+    position: { ...transform.position },
+    rotation: { ...transform.rotation },
+    scale: {
+      x: Math.max(0.01, transform.scale.x),
+      y: Math.max(0.01, transform.scale.y),
+      z: Math.max(0.01, transform.scale.z),
+    },
+  };
+}
+
+function commitActive(state: State, fn: (shot: Shot) => void): Pick<State, 'project' | 'undoStack' | 'redoStack'> {
+  const history = recordProjectHistory(state.project, { undoStack: state.undoStack, redoStack: state.redoStack });
+  const project = mutateActive(state.project, state.activeSequenceId, state.activeShotId, fn);
+  persist(project);
+  return { project, ...history };
 }
 
 const initial = loadProject();
@@ -65,59 +95,68 @@ export const useDirectorStore = create<State>((set, get) => ({
   mode: '3d',
   playhead: 0,
   selectedObjectId: 'actor-a',
+  transformMode: 'translate',
+  undoStack: [],
+  redoStack: [],
   setMode: (mode) => set({ mode }),
   setPlayhead: (playhead) => set({ playhead }),
   selectObject: (selectedObjectId) => set({ selectedObjectId }),
+  setTransformMode: (transformMode) => set({ transformMode }),
+  undo: () => set((state) => {
+    const result = undoProjectHistory(state.project, { undoStack: state.undoStack, redoStack: state.redoStack });
+    if (!result) return {};
+    const project = stamp(result.project);
+    persist(project);
+    return { project, ...result.history };
+  }),
+  redo: () => set((state) => {
+    const result = redoProjectHistory(state.project, { undoStack: state.undoStack, redoStack: state.redoStack });
+    if (!result) return {};
+    const project = stamp(result.project);
+    persist(project);
+    return { project, ...result.history };
+  }),
   getActiveShot: () => {
     const { project, activeSequenceId, activeShotId } = get();
     const shot = project.sequences.find((s) => s.id === activeSequenceId)?.shots.find((s) => s.id === activeShotId);
     if (!shot) throw new Error('Active shot not found');
     return shot;
   },
-  updateActorPosition: (actorId, axis, value) => set((state) => ({
-    project: mutateActive(state.project, state.activeSequenceId, state.activeShotId, (shot) => {
-      const actor = shot.actors.find((a) => a.id === actorId);
-      if (actor) actor.transform.position[axis] = value;
-    }),
+  updateActorTransformAxis: (actorId, field, axis, value) => set((state) => commitActive(state, (shot) => {
+    const actor = shot.actors.find((a) => a.id === actorId);
+    if (!actor) return;
+    actor.transform[field][axis] = field === 'scale' ? Math.max(0.01, value) : value;
   })),
-  setActorPosition: (actorId, position) => set((state) => ({
-    project: mutateActive(state.project, state.activeSequenceId, state.activeShotId, (shot) => {
-      const actor = shot.actors.find((a) => a.id === actorId);
-      if (actor) actor.transform.position = { ...position };
-    }),
+  setActorTransform: (actorId, transform) => set((state) => commitActive(state, (shot) => {
+    const actor = shot.actors.find((a) => a.id === actorId);
+    if (actor) actor.transform = normalizeTransform(transform);
   })),
-  updateCamera: (field, value) => set((state) => ({
-    project: mutateActive(state.project, state.activeSequenceId, state.activeShotId, (shot) => { shot.camera[field] = value; }),
+  updateCamera: (field, value) => set((state) => commitActive(state, (shot) => { shot.camera[field] = value; })),
+  updateCameraVector: (field, axis, value) => set((state) => commitActive(state, (shot) => { shot.camera[field][axis] = value; })),
+  applyLightingPreset: (id) => set((state) => commitActive(state, (shot) => { shot.lights = structuredClone(lightingPresets[id].lights); })),
+  setShotStatus: (status) => set((state) => commitActive(state, (shot) => { shot.status = status; })),
+  addAudioPlaceholder: (kind) => set((state) => commitActive(state, (shot) => {
+    const index = shot.audio.length + 1;
+    shot.audio.push({ id: `audio-${Date.now()}`, name: `${kind.toUpperCase()} ${index}`, kind, start: 0, duration: Math.min(3, shot.duration), gainDb: 0, uri: '' });
   })),
-  updateCameraVector: (field, axis, value) => set((state) => ({
-    project: mutateActive(state.project, state.activeSequenceId, state.activeShotId, (shot) => { shot.camera[field][axis] = value; }),
+  addActorPreset: (presetId) => set((state) => commitActive(state, (shot) => {
+    const index = shot.actors.length + 1;
+    const spread = ((index - 1) % 5) - 2;
+    shot.actors.push(createActorFromPreset(presetId, index, spread * 0.9, -Math.floor((index - 1) / 5) * 1.1));
   })),
-  applyLightingPreset: (id) => set((state) => ({
-    project: mutateActive(state.project, state.activeSequenceId, state.activeShotId, (shot) => { shot.lights = structuredClone(lightingPresets[id].lights); }),
-  })),
-  setShotStatus: (status) => set((state) => ({
-    project: mutateActive(state.project, state.activeSequenceId, state.activeShotId, (shot) => { shot.status = status; }),
-  })),
-  addAudioPlaceholder: (kind) => set((state) => ({
-    project: mutateActive(state.project, state.activeSequenceId, state.activeShotId, (shot) => {
-      const index = shot.audio.length + 1;
-      shot.audio.push({ id: `audio-${Date.now()}`, name: `${kind.toUpperCase()} ${index}`, kind, start: 0, duration: Math.min(3, shot.duration), gainDb: 0, uri: '' });
-    }),
-  })),
-  addActorPreset: (presetId) => set((state) => ({
-    project: mutateActive(state.project, state.activeSequenceId, state.activeShotId, (shot) => {
-      const index = shot.actors.length + 1;
-      const spread = ((index - 1) % 5) - 2;
-      shot.actors.push(createActorFromPreset(presetId, index, spread * 0.9, -Math.floor((index - 1) / 5) * 1.1));
-    }),
-  })),
-  saveVersion: () => set((state) => ({
-    project: mutateActive(state.project, state.activeSequenceId, state.activeShotId, (shot) => { shot.version += 1; }),
-  })),
+  saveVersion: () => set((state) => commitActive(state, (shot) => { shot.version += 1; })),
   exportProject: () => JSON.stringify(get().project, null, 2),
   importProject: (json) => {
-    const parsed = projectSchema.parse(JSON.parse(json));
+    const parsed = stamp(projectSchema.parse(JSON.parse(json)));
     persist(parsed);
-    set({ project: parsed, activeSequenceId: parsed.sequences[0].id, activeShotId: parsed.sequences[0].shots[0].id, playhead: 0 });
+    set({
+      project: parsed,
+      activeSequenceId: parsed.sequences[0].id,
+      activeShotId: parsed.sequences[0].shots[0].id,
+      playhead: 0,
+      selectedObjectId: parsed.sequences[0].shots[0].actors[0]?.id,
+      undoStack: [],
+      redoStack: [],
+    });
   },
 }));
