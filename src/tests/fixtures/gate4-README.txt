@@ -1,0 +1,1 @@
+Gate 4 generated fixtures are deterministic textual interchange artifacts produced by tests: USDA 1.0, OTIO JSON, MaterialX 1.39, OCIO/ACES manifests, and DCC adapter package manifests. Tests assert round-trip identity for PDS payloads and stable coordinate/color/timebase contracts.
