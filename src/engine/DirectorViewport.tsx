@@ -7,8 +7,9 @@ import { useDirectorStore } from '../store/directorStore';
 import { fitAspectRect, focalLengthToVerticalFovDeg } from '../utils/math';
 import { correlatedColorTemperatureToSrgb } from '../utils/lightColor';
 import { sampleActorTransform, sampleCamera, sampleLight } from '../utils/animation';
-import { resolvePoseDefinition } from '../domain/poseLibrary';
-import type { Actor, DirectorLight, Vec3 } from '../domain/model';
+import type { DirectorLight } from '../domain/model';
+import { instantiateDirectorCharacter } from '../characters/characterLoader';
+import { uiZh } from '../i18n/zhCN';
 
 function directorLightColor(light: DirectorLight) {
   const cct = correlatedColorTemperatureToSrgb(light.colorTemperatureK);
@@ -16,109 +17,9 @@ function directorLightColor(light: DirectorLight) {
   return color.multiply(new THREE.Color(light.color));
 }
 
-function actorAccent(actor: Actor) {
-  const male = actor.demographics.sex === 'male';
-  if (actor.demographics.ageGroup === 'child') return male ? '#69a8d8' : '#d995b5';
-  if (actor.demographics.ageGroup === 'teen') return male ? '#5b9bd5' : '#d287aa';
-  if (actor.demographics.ageGroup === 'elderly') return male ? '#75869a' : '#a68a9a';
-  return male ? '#467fb8' : '#c87596';
-}
-
-function applyRotation(object: THREE.Object3D, value?: Vec3) {
-  if (value) object.rotation.set(value.x, value.y, value.z);
-}
-
-function buildDirectorActor(actor: Actor) {
-  const d = actor.demographics;
-  const pose = resolvePoseDefinition(actor.pose);
-  const group = new THREE.Group();
-  group.name = actor.name;
-  group.userData.actorId = actor.id;
-  const rig = new THREE.Group();
-  rig.position.y += pose.rootOffsetY;
-  if (d.posture === 'elderly') { rig.rotation.x = -0.08; rig.position.z = 0.035; }
-  else if (d.posture === 'relaxed') rig.rotation.x = -0.025;
-  group.add(rig);
-
-  const accent = actorAccent(actor);
-  const skin = new THREE.MeshStandardMaterial({ color: '#d7af94', roughness: 0.82 });
-  const cloth = new THREE.MeshStandardMaterial({ color: accent, roughness: 0.8 });
-  const dark = new THREE.MeshStandardMaterial({ color: '#343b45', roughness: 0.9 });
-  const h = d.heightM;
-  const headR = d.headRadiusM;
-  const legH = h * (d.ageGroup === 'child' ? 0.39 : d.ageGroup === 'elderly' ? 0.43 : 0.46);
-  const torsoTop = h - headR * 2.2;
-  const torsoH = Math.max(0.34, torsoTop - legH);
-  const hipW = d.shoulderWidthM * (d.sex === 'female' ? 0.78 : 0.72);
-  const limbR = Math.max(0.035, d.shoulderWidthM * 0.095);
-
-  const torsoPivot = new THREE.Group();
-  torsoPivot.position.y = legH;
-  applyRotation(torsoPivot, pose.jointRotations.torso);
-  const torso = new THREE.Mesh(new THREE.BoxGeometry(d.shoulderWidthM, torsoH, d.bodyDepthM), cloth);
-  torso.position.y = torsoH / 2;
-  torso.castShadow = true;
-  torso.userData.actorId = actor.id;
-  torsoPivot.add(torso);
-  rig.add(torsoPivot);
-
-  const pelvis = new THREE.Mesh(new THREE.BoxGeometry(hipW, Math.max(0.10, h * 0.07), d.bodyDepthM * 0.92), dark);
-  pelvis.position.y = legH - h * 0.025;
-  pelvis.castShadow = true;
-  pelvis.userData.actorId = actor.id;
-  rig.add(pelvis);
-
-  const headPivot = new THREE.Group();
-  headPivot.position.y = h - headR * 2;
-  applyRotation(headPivot, pose.jointRotations.head);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(headR, 20, 16), skin);
-  head.position.y = headR;
-  head.castShadow = true;
-  head.userData.actorId = actor.id;
-  headPivot.add(head);
-  rig.add(headPivot);
-
-  const legGeom = new THREE.CapsuleGeometry(limbR, Math.max(0.08, legH - limbR * 2), 5, 10);
-  const addLeg = (side: 'left' | 'right', x: number) => {
-    const pivot = new THREE.Group();
-    pivot.position.set(x, legH, 0);
-    applyRotation(pivot, pose.jointRotations[side === 'left' ? 'leftLeg' : 'rightLeg']);
-    const mesh = new THREE.Mesh(legGeom, dark);
-    mesh.position.y = -legH / 2;
-    mesh.castShadow = true;
-    mesh.userData.actorId = actor.id;
-    pivot.add(mesh);
-    rig.add(pivot);
-  };
-  addLeg('left', -hipW * 0.23);
-  addLeg('right', hipW * 0.23);
-
-  const armLen = Math.max(0.28, torsoH * 0.92);
-  const armGeom = new THREE.CapsuleGeometry(limbR * 0.82, Math.max(0.06, armLen - limbR * 1.64), 5, 10);
-  const shoulderY = legH + torsoH * 0.82;
-  const addArm = (side: 'left' | 'right', x: number) => {
-    const pivot = new THREE.Group();
-    pivot.position.set(x, shoulderY, 0);
-    pivot.rotation.z = side === 'left' ? -0.035 : 0.035;
-    applyRotation(pivot, pose.jointRotations[side === 'left' ? 'leftArm' : 'rightArm']);
-    const mesh = new THREE.Mesh(armGeom, skin);
-    mesh.position.y = -armLen / 2;
-    mesh.castShadow = true;
-    mesh.userData.actorId = actor.id;
-    pivot.add(mesh);
-    rig.add(pivot);
-  };
-  addArm('left', -(d.shoulderWidthM / 2 + limbR * 0.15));
-  addArm('right', d.shoulderWidthM / 2 + limbR * 0.15);
-
-  const facing = new THREE.ArrowHelper(new THREE.Vector3(0, 0, -1), new THREE.Vector3(0, Math.min(h * 0.82, actor.eyeHeight), 0), Math.max(0.4, h * 0.32), 0xffd166, 0.13, 0.08);
-  rig.add(facing);
-  return group;
-}
-
 function buildLightMarker(light: DirectorLight, color: THREE.Color) {
   const group = new THREE.Group();
-  group.name = `LIGHT · ${light.name}`;
+  group.name = `灯具 · ${light.name}`;
   group.position.set(light.position.x, light.position.y, light.position.z);
   group.userData.lightId = light.id;
   const material = new THREE.MeshBasicMaterial({ color, wireframe: light.type !== 'point' });
@@ -134,23 +35,44 @@ function buildLightMarker(light: DirectorLight, color: THREE.Color) {
   return group;
 }
 
+type LightRuntime = {
+  light: THREE.Light;
+  marker?: THREE.Group;
+  target?: THREE.Object3D;
+};
+
 type Runtime = {
   scene: THREE.Scene;
   renderer: THREE.WebGLRenderer;
   editorCamera: THREE.PerspectiveCamera;
   shotCamera: THREE.PerspectiveCamera;
+  cameraHelper?: THREE.CameraHelper;
   controls: OrbitControls;
   transform: TransformControls;
   content: THREE.Group;
   actorObjects: Map<string, THREE.Group>;
   lightObjects: Map<string, THREE.Group>;
+  lights: Map<string, LightRuntime>;
   raf: number;
 };
+
+type CharacterLoadState = { loaded: number; total: number; failed: number };
+
+function disposeSceneContent(root: THREE.Object3D) {
+  root.traverse((object) => {
+    const mesh = object as THREE.Mesh;
+    if (mesh.geometry && !object.userData.sharedCharacterGeometry) mesh.geometry.dispose();
+    const material = mesh.material as THREE.Material | THREE.Material[] | undefined;
+    if (Array.isArray(material)) material.forEach((entry) => entry.dispose());
+    else material?.dispose?.();
+  });
+}
 
 export function DirectorViewport() {
   const mountRef = useRef<HTMLDivElement>(null);
   const runtime = useRef<Runtime | null>(null);
   const [viewMode, setViewMode] = useState<'director' | 'shot'>('director');
+  const [characterLoad, setCharacterLoad] = useState<CharacterLoadState>({ loaded: 0, total: 0, failed: 0 });
   const viewModeRef = useRef(viewMode);
   const shot = useDirectorStore((s) => s.getActiveShot());
   const shotAspectRef = useRef(shot.frameAspect);
@@ -224,6 +146,7 @@ export function DirectorViewport() {
 
     const actorObjects = new Map<string, THREE.Group>();
     const lightObjects = new Map<string, THREE.Group>();
+    const lights = new Map<string, LightRuntime>();
 
     function resize() {
       const w = host.clientWidth || 800;
@@ -310,7 +233,7 @@ export function DirectorViewport() {
       raf = requestAnimationFrame(animate);
     };
     animate();
-    runtime.current = { scene, renderer, editorCamera, shotCamera, controls, transform, content, actorObjects, lightObjects, raf };
+    runtime.current = { scene, renderer, editorCamera, shotCamera, controls, transform, content, actorObjects, lightObjects, lights, raf };
 
     return () => {
       cancelAnimationFrame(raf);
@@ -320,10 +243,11 @@ export function DirectorViewport() {
       transform.detach();
       transform.dispose();
       controls.dispose();
+      disposeSceneContent(content);
       floor.geometry.dispose();
       (floor.material as THREE.Material).dispose();
       renderer.dispose();
-      host.removeChild(renderer.domElement);
+      if (host.contains(renderer.domElement)) host.removeChild(renderer.domElement);
       runtime.current = null;
     };
   }, [selectObject]);
@@ -338,85 +262,154 @@ export function DirectorViewport() {
   useEffect(() => {
     const r = runtime.current;
     if (!r) return;
-
+    let cancelled = false;
     r.transform.detach();
-    r.content.traverse((obj) => {
-      const mesh = obj as THREE.Mesh;
-      mesh.geometry?.dispose?.();
-      const material = mesh.material as THREE.Material | THREE.Material[] | undefined;
-      if (Array.isArray(material)) material.forEach((m) => m.dispose());
-      else material?.dispose?.();
-    });
+    disposeSceneContent(r.content);
     r.content.clear();
     r.actorObjects.clear();
     r.lightObjects.clear();
-    r.renderer.toneMappingExposure = Math.pow(2, shot.exposureEv);
+    r.lights.clear();
+    r.cameraHelper = undefined;
+    const time = useDirectorStore.getState().playhead;
+    setCharacterLoad({ loaded: 0, total: shot.actors.length, failed: 0 });
 
-    shot.actors.forEach((actor) => {
-      const group = buildDirectorActor(actor);
-      const transform = sampleActorTransform(actor, playhead);
-      group.position.set(transform.position.x, transform.position.y, transform.position.z);
-      group.rotation.set(transform.rotation.x, transform.rotation.y, transform.rotation.z);
-      group.scale.set(transform.scale.x, transform.scale.y, transform.scale.z);
-      r.content.add(group);
-      r.actorObjects.set(actor.id, group);
-    });
+    for (const actor of shot.actors) {
+      const anchor = new THREE.Group();
+      anchor.name = actor.name;
+      anchor.userData.actorId = actor.id;
+      const transformAtTime = sampleActorTransform(actor, time);
+      anchor.position.set(transformAtTime.position.x, transformAtTime.position.y, transformAtTime.position.z);
+      anchor.rotation.set(transformAtTime.rotation.x, transformAtTime.rotation.y, transformAtTime.rotation.z);
+      anchor.scale.set(transformAtTime.scale.x, transformAtTime.scale.y, transformAtTime.scale.z);
+      r.content.add(anchor);
+      r.actorObjects.set(actor.id, anchor);
+      void instantiateDirectorCharacter(actor).then(({ root }) => {
+        if (cancelled || runtime.current !== r || r.actorObjects.get(actor.id) !== anchor) {
+          disposeSceneContent(root);
+          return;
+        }
+        anchor.add(root);
+        setCharacterLoad((state) => ({ ...state, loaded: state.loaded + 1 }));
+      }).catch((error) => {
+        console.error(`角色 ${actor.name} 加载失败`, error);
+        if (!cancelled) setCharacterLoad((state) => ({ ...state, failed: state.failed + 1 }));
+      });
+    }
 
-    shot.lights.forEach((source) => {
-      const l = sampleLight(source, playhead);
+    for (const source of shot.lights) {
+      const l = sampleLight(source, time);
       const color = directorLightColor(l);
       let light: THREE.Light;
+      let target: THREE.Object3D | undefined;
       if (l.type === 'ambient') light = new THREE.AmbientLight(color, l.intensity);
       else if (l.type === 'point') light = new THREE.PointLight(color, l.intensity, 0, 2);
       else if (l.type === 'spot') {
         const spot = new THREE.SpotLight(color, l.intensity, 0, Math.PI / 5, 0.4, 2);
-        spot.target.position.set(l.target?.x ?? 0, l.target?.y ?? 1, l.target?.z ?? 0);
-        r.content.add(spot.target);
+        target = spot.target;
+        target.position.set(l.target?.x ?? 0, l.target?.y ?? 1, l.target?.z ?? 0);
+        r.content.add(target);
         light = spot;
-      } else if (l.type === 'area') {
-        light = new THREE.RectAreaLight(color, l.intensity, 2, 1);
-      } else {
+      } else if (l.type === 'area') light = new THREE.RectAreaLight(color, l.intensity, 2, 1);
+      else {
         const directional = new THREE.DirectionalLight(color, l.intensity);
-        directional.target.position.set(l.target?.x ?? 0, l.target?.y ?? 1, l.target?.z ?? 0);
-        r.content.add(directional.target);
+        target = directional.target;
+        target.position.set(l.target?.x ?? 0, l.target?.y ?? 1, l.target?.z ?? 0);
+        r.content.add(target);
         light = directional;
       }
       light.position.set(l.position.x, l.position.y, l.position.z);
       if (l.type === 'area' && l.target) light.lookAt(l.target.x, l.target.y, l.target.z);
       light.castShadow = l.type !== 'area' && l.type !== 'ambient' && l.castShadow;
       r.content.add(light);
+      let marker: THREE.Group | undefined;
       if (l.type !== 'ambient') {
-        const marker = buildLightMarker(l, color);
+        marker = buildLightMarker(l, color);
         r.content.add(marker);
         r.lightObjects.set(source.id, marker);
       }
-    });
+      r.lights.set(source.id, { light, marker, target });
+    }
 
+    const cameraAtTime = sampleCamera(shot.camera, time);
+    r.shotCamera.aspect = shot.frameAspect;
+    r.shotCamera.fov = focalLengthToVerticalFovDeg(cameraAtTime.focalLengthMm, cameraAtTime.sensorWidthMm, shot.frameAspect);
+    r.shotCamera.position.set(cameraAtTime.position.x, cameraAtTime.position.y, cameraAtTime.position.z);
+    r.shotCamera.lookAt(cameraAtTime.target.x, cameraAtTime.target.y, cameraAtTime.target.z);
+    r.shotCamera.updateProjectionMatrix();
+    const helper = new THREE.CameraHelper(r.shotCamera);
+    r.cameraHelper = helper;
+    r.content.add(helper);
+
+    return () => { cancelled = true; };
+  }, [shot]);
+
+  useEffect(() => {
+    const r = runtime.current;
+    if (!r) return;
+    r.renderer.toneMappingExposure = Math.pow(2, shot.exposureEv);
+    for (const actor of shot.actors) {
+      const group = r.actorObjects.get(actor.id);
+      if (!group) continue;
+      const transformAtTime = sampleActorTransform(actor, playhead);
+      group.position.set(transformAtTime.position.x, transformAtTime.position.y, transformAtTime.position.z);
+      group.rotation.set(transformAtTime.rotation.x, transformAtTime.rotation.y, transformAtTime.rotation.z);
+      group.scale.set(transformAtTime.scale.x, transformAtTime.scale.y, transformAtTime.scale.z);
+    }
+    for (const source of shot.lights) {
+      const item = r.lights.get(source.id);
+      if (!item) continue;
+      const l = sampleLight(source, playhead);
+      item.light.color.copy(directorLightColor(l));
+      item.light.intensity = l.intensity;
+      item.light.position.set(l.position.x, l.position.y, l.position.z);
+      item.light.castShadow = l.type !== 'area' && l.type !== 'ambient' && l.castShadow;
+      if (item.target) item.target.position.set(l.target?.x ?? 0, l.target?.y ?? 1, l.target?.z ?? 0);
+      if (l.type === 'area' && l.target) item.light.lookAt(l.target.x, l.target.y, l.target.z);
+      if (item.marker) {
+        item.marker.position.set(l.position.x, l.position.y, l.position.z);
+        item.marker.traverse((object) => {
+          const material = (object as THREE.Mesh).material as THREE.MeshBasicMaterial | undefined;
+          if (material?.color) material.color.copy(directorLightColor(l));
+        });
+      }
+    }
     const cameraAtTime = sampleCamera(shot.camera, playhead);
     r.shotCamera.aspect = shot.frameAspect;
     r.shotCamera.fov = focalLengthToVerticalFovDeg(cameraAtTime.focalLengthMm, cameraAtTime.sensorWidthMm, shot.frameAspect);
     r.shotCamera.position.set(cameraAtTime.position.x, cameraAtTime.position.y, cameraAtTime.position.z);
     r.shotCamera.lookAt(cameraAtTime.target.x, cameraAtTime.target.y, cameraAtTime.target.z);
     r.shotCamera.updateProjectionMatrix();
-    r.content.add(new THREE.CameraHelper(r.shotCamera));
+    r.cameraHelper?.update();
+  }, [playhead, shot]);
 
+  useEffect(() => {
+    const r = runtime.current;
+    if (!r) return;
+    r.transform.detach();
     const selected = selectedObjectId ? r.actorObjects.get(selectedObjectId) ?? r.lightObjects.get(selectedObjectId) : undefined;
     if (selected && viewMode === 'director' && shotEditable) {
       r.transform.camera = r.editorCamera;
       r.transform.attach(selected);
     }
-  }, [shot, selectedObjectId, viewMode, playhead, shotEditable]);
+  }, [selectedObjectId, viewMode, shotEditable, characterLoad.loaded]);
+
+  const characterStatus = characterLoad.failed
+    ? `开源角色：${characterLoad.loaded}/${characterLoad.total} 已加载 · ${characterLoad.failed} 个失败`
+    : characterLoad.loaded === characterLoad.total && characterLoad.total > 0
+      ? `${uiZh.characterReady} · ${characterLoad.loaded}/${characterLoad.total} · Quaternius CC0`
+      : `${uiZh.loadingCharacter} ${characterLoad.loaded}/${characterLoad.total}`;
 
   return <div className="viewport-shell">
     <div className="viewport-toolbar">
-      <span className="chip">3D Blocking / Previs</span>
+      <span className="chip">3D 场面调度 / 预演</span>
       <button className={viewMode === 'director' ? 'active' : ''} onClick={() => setViewMode('director')}>导演视图</button>
       <button className={viewMode === 'shot' ? 'active' : ''} onClick={() => setViewMode('shot')}>镜头视图</button>
       <button disabled={!shotEditable} className={shotEditable && transformMode === 'translate' ? 'active' : ''} onClick={() => setTransformMode('translate')} title="W">移动 W</button>
       <button disabled={!shotEditable || selectedIsLight} className={shotEditable && !selectedIsLight && transformMode === 'rotate' ? 'active' : ''} onClick={() => setTransformMode('rotate')} title="E">旋转 E</button>
       <button disabled={!shotEditable || selectedIsLight} className={shotEditable && !selectedIsLight && transformMode === 'scale' ? 'active' : ''} onClick={() => setTransformMode('scale')} title="R">缩放 R</button>
-      <span>{shotEditable ? (selectedIsLight ? '灯具 Gizmo · 世界坐标 · 5cm Snap' : '5cm · 15° · 5% Snap') : 'APPROVED · 只读；请在 Review 中创建新 WIP'}</span>
-      <span className="lens-readout">T {playhead.toFixed(2)}s · {sampledCamera.focalLengthMm.toFixed(0)}mm · f/{sampledCamera.aperture} · {shot.frameAspect.toFixed(3)}:1 · EV {shot.exposureEv >= 0 ? '+' : ''}{shot.exposureEv.toFixed(1)}</span>
+      <span>{shotEditable ? (selectedIsLight ? '灯具操纵器 · 世界坐标 · 5 厘米吸附' : '5 厘米 · 15° · 5% 吸附') : uiZh.approvedReadonly}</span>
+      <span data-character-status>{characterStatus}</span>
+      <span className="lens-readout">时间 {playhead.toFixed(2)} 秒 · {sampledCamera.focalLengthMm.toFixed(0)} 毫米 · f/{sampledCamera.aperture} · {shot.frameAspect.toFixed(3)}:1 · 曝光 EV {shot.exposureEv >= 0 ? '+' : ''}{shot.exposureEv.toFixed(1)}</span>
     </div>
     <div className="viewport" ref={mountRef} />
   </div>;
