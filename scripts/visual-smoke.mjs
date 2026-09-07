@@ -23,6 +23,24 @@ function minimalGlb() {
   return out;
 }
 
+function minimalWav() {
+  const sampleRate = 8000;
+  const sampleCount = 1600;
+  const channels = 1;
+  const bitsPerSample = 16;
+  const dataSize = sampleCount * channels * (bitsPerSample / 8);
+  const out = Buffer.alloc(44 + dataSize);
+  out.write('RIFF', 0); out.writeUInt32LE(36 + dataSize, 4); out.write('WAVE', 8);
+  out.write('fmt ', 12); out.writeUInt32LE(16, 16); out.writeUInt16LE(1, 20); out.writeUInt16LE(channels, 22);
+  out.writeUInt32LE(sampleRate, 24); out.writeUInt32LE(sampleRate * channels * bitsPerSample / 8, 28); out.writeUInt16LE(channels * bitsPerSample / 8, 32); out.writeUInt16LE(bitsPerSample, 34);
+  out.write('data', 36); out.writeUInt32LE(dataSize, 40);
+  for (let i = 0; i < sampleCount; i += 1) {
+    const sample = Math.round(Math.sin(2 * Math.PI * 440 * i / sampleRate) * 0.22 * 32767);
+    out.writeInt16LE(sample, 44 + i * 2);
+  }
+  return out;
+}
+
 async function assertNoHorizontalOverflow(page, label) {
   const overflow = await page.evaluate(() => ({ width: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth }));
   if (overflow.scroll > overflow.width + 1) throw new Error(`${label}: horizontal overflow ${overflow.scroll}px > ${overflow.width}px`);
@@ -34,7 +52,7 @@ async function shot(page, name) {
 
 async function clickMode(page, label) {
   await page.getByRole('button', { name: label, exact: true }).click();
-  await page.waitForTimeout(100);
+  await page.waitForTimeout(180);
 }
 
 const browser = await chromium.launch({ headless: true });
@@ -55,10 +73,12 @@ try {
   const viewportBox = await viewportCanvas.boundingBox();
   if (!viewportBox || viewportBox.width < 300 || viewportBox.height < 300) throw new Error('3D viewport did not produce a usable canvas.');
   await page.getByRole('button', { name: '镜头视图', exact: true }).click();
+  await page.getByText(/1\.778:1/).waitFor();
   await shot(page, 'desktop-3d-shot');
 
   await clickMode(page, '2D 站位');
   await page.locator('.canvas-workspace canvas').waitFor({ state: 'visible' });
+  await page.getByText(/HFOV/).waitFor();
   await shot(page, 'desktop-floorplan');
 
   await clickMode(page, '2D 构图');
@@ -68,6 +88,36 @@ try {
   await clickMode(page, '时间线/声音');
   await page.locator('.timeline-page').waitFor({ state: 'visible' });
   await page.getByText('CAMERA', { exact: true }).first().waitFor();
+  const dialogue = page.locator('.audio-editor-track').filter({ hasText: 'DIALOGUE' });
+  await dialogue.locator('input[type=file]').setInputFiles({ name: 'audit-dialogue.wav', mimeType: 'audio/wav', buffer: minimalWav() });
+  await page.getByText(/已解码、生成波形并加入 DIALOGUE/).waitFor({ timeout: 10_000 });
+  await dialogue.locator('.audio-clip-card').first().waitFor();
+  const markerInput = page.getByPlaceholder(/Marker @ F/);
+  await markerInput.fill('Audit marker');
+  await page.getByRole('button', { name: '+ Marker', exact: true }).click();
+  const noteInput = page.getByPlaceholder(/Director note @ F/);
+  await noteInput.fill('Audit director note');
+  await page.getByRole('button', { name: '+ Note', exact: true }).click();
+  await page.getByText(/Audit marker/).waitFor();
+  await page.getByText(/Audit director note/).waitFor();
+
+  const otioDownloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export OTIO', exact: true }).click();
+  const otioDownload = await otioDownloadPromise;
+  const otioPath = await otioDownload.path();
+  const otioText = await fs.readFile(otioPath, 'utf8');
+  if (!otioText.includes('Audit marker') || !otioText.includes('Audit director note') || !otioText.includes('audit-dialogue.wav')) throw new Error('OTIO export did not preserve editorial state.');
+  const otioImport = page.locator('.editorial-export-bar input[type=file]');
+  await otioImport.setInputFiles({ name: 'roundtrip.otio', mimeType: 'application/json', buffer: Buffer.from(otioText) });
+  await page.getByText(/OTIO 已导入/).waitFor();
+
+  const mp4DownloadPromise = page.waitForEvent('download', { timeout: 60_000 });
+  await page.getByRole('button', { name: 'Export MP4 Reference', exact: true }).click();
+  const mp4Download = await mp4DownloadPromise;
+  const mp4Path = await mp4Download.path();
+  const mp4Stat = await fs.stat(mp4Path);
+  if (!mp4Download.suggestedFilename().endsWith('.mp4') || mp4Stat.size < 1000) throw new Error('MP4 reference export did not produce a valid non-empty download.');
+  await page.getByText(/MP4 已完成/).waitFor({ timeout: 10_000 });
   await shot(page, 'desktop-timeline');
 
   await clickMode(page, 'Asset Registry');
@@ -88,7 +138,19 @@ try {
   await page.getByRole('button', { name: 'Connect', exact: true }).click();
   await page.locator('.connection-state.connected').waitFor({ timeout: 10_000 });
   await page.getByText('CI Director', { exact: true }).waitFor();
-  await shot(page, 'desktop-review-collab');
+  await page.getByText(/SHOT LOCK · owned/).waitFor({ timeout: 10_000 });
+  await page.getByRole('button', { name: 'REVIEW', exact: true }).click();
+  await page.locator('.status-row button.active').filter({ hasText: 'REVIEW' }).waitFor();
+  await page.getByRole('button', { name: 'APPROVED', exact: true }).click();
+  await page.locator('.status-row button.active').filter({ hasText: 'APPROVED' }).waitFor();
+  await shot(page, 'desktop-review-approved');
+
+  await clickMode(page, '3D 导演台');
+  await page.getByText(/APPROVED · 只读/).waitFor();
+  if (!(await page.getByRole('button', { name: '撤销' }).isDisabled())) throw new Error('Undo remained enabled on an approved Shot.');
+  const inspectorFrameInput = page.locator('.inspector input[type=number]').first();
+  if (!(await inspectorFrameInput.isDisabled())) throw new Error('Inspector remained editable on an approved Shot.');
+  await shot(page, 'desktop-approved-readonly');
 
   await clickMode(page, 'Pipeline');
   await page.getByText('PIPELINE INTEROPERABILITY', { exact: true }).waitFor();
@@ -97,7 +159,7 @@ try {
   const usd = await usdDownload;
   const usdPath = await usd.path();
   const usdText = await fs.readFile(usdPath, 'utf8');
-  for (const required of ['metersPerUnit = 1', 'float focalLength = 0.5', 'float horizontalAperture = 0.36', 'matrix4d xformOp:transform']) {
+  for (const required of ['metersPerUnit = 1', 'float focalLength = 0.5', 'float horizontalAperture = 0.36', 'float verticalAperture = 0.2025', 'matrix4d xformOp:transform', 'custom double pds:frameAspect = 1.777777778']) {
     if (!usdText.includes(required)) throw new Error(`Downloaded USDA missing physical camera contract: ${required}`);
   }
   await shot(page, 'desktop-pipeline');
@@ -117,8 +179,10 @@ try {
   const projectPath = await projectFile.path();
   const exported = JSON.parse(await fs.readFile(projectPath, 'utf8'));
   if (exported.schemaVersion !== 'pds-1' || exported.id !== 'project-demo') throw new Error('Exported project JSON failed basic integrity checks.');
+  if (exported.sequences[0].shots[0].status !== 'APPROVED' || Math.abs(exported.sequences[0].shots[0].frameAspect - 16 / 9) > 1e-9) throw new Error('Approved status or authoritative frame aspect was not preserved.');
   if (!exported.assets.some((asset) => asset.id === 'audit-prop')) throw new Error('Imported GLB asset was not preserved in project export.');
   if (!exported.ai.outputs.some((output) => output.status === 'generated')) throw new Error('Generated storyboard provenance was not preserved in project export.');
+  if (!exported.sequences[0].shots[0].audio.some((clip) => clip.name.includes('audit-dialogue'))) throw new Error('Imported audio clip was not preserved in project export.');
   await assertNoHorizontalOverflow(page, 'desktop final');
 
   const mobile = await context.newPage();
@@ -144,7 +208,7 @@ try {
   await mobile.close();
 
   if (browserErrors.length) throw new Error(`Desktop browser errors:\n${browserErrors.join('\n')}`);
-  console.log('PDS Chromium end-to-end / visual smoke PASSED');
+  console.log('PDS Chromium full editorial / approval / visual smoke PASSED');
 } finally {
   await context.close();
   await browser.close();
