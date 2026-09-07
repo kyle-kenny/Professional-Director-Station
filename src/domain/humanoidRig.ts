@@ -33,6 +33,7 @@ export const ikLimbSchema = z.object({
   locked: z.boolean().default(false),
   target: rigVec3Schema.optional(),
   pole: rigVec3Schema.optional(),
+  lockedWorldTarget: rigVec3Schema.optional(),
 });
 export type IkLimbState = z.infer<typeof ikLimbSchema>;
 
@@ -83,10 +84,7 @@ const lim = (label: string, group: JointLimit['group'], min: [number, number, nu
   maxDeg: { x: max[0], y: max[1], z: max[2] },
 });
 
-/**
- * Director-safe additive limits around the imported humanoid rest pose.
- * They intentionally stay a little conservative so previs controls do not produce broken limbs.
- */
+/** Director-safe additive limits around the imported humanoid rest pose. */
 export const humanoidJointLimits: Record<HumanoidJointId, JointLimit> = {
   pelvis: lim('骨盆', '躯干', [-35, -45, -30], [35, 45, 30]),
   spine_01: lim('腰椎', '躯干', [-35, -35, -30], [45, 35, 30]),
@@ -162,8 +160,8 @@ export function mirrorRigState(source: HumanoidRigState): HumanoidRigState {
   const mirrorPoint = (value?: RigVec3) => value ? { x: -value.x, y: value.y, z: value.z } : undefined;
   const swapLimb = (left: IkLimbId, right: IkLimbId) => {
     const l = source.ik[left], r = source.ik[right];
-    result.ik[left] = { ...structuredClone(r), target: mirrorPoint(r.target), pole: mirrorPoint(r.pole) };
-    result.ik[right] = { ...structuredClone(l), target: mirrorPoint(l.target), pole: mirrorPoint(l.pole) };
+    result.ik[left] = { ...structuredClone(r), target: mirrorPoint(r.target), pole: mirrorPoint(r.pole), lockedWorldTarget: mirrorPoint(r.lockedWorldTarget) };
+    result.ik[right] = { ...structuredClone(l), target: mirrorPoint(l.target), pole: mirrorPoint(l.pole), lockedWorldTarget: mirrorPoint(l.lockedWorldTarget) };
   };
   swapLimb('leftHand', 'rightHand');
   swapLimb('leftFoot', 'rightFoot');
