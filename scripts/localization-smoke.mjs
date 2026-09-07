@@ -1,9 +1,12 @@
 import fs from 'node:fs/promises';
 
 const files = [
+  'src/App.tsx',
   'src/components/TopBar.tsx',
   'src/components/ProjectSidebar.tsx',
   'src/components/Inspector.tsx',
+  'src/components/FloorPlanCanvas.tsx',
+  'src/components/DirectorFrameCanvas.tsx',
   'src/components/TimelinePanel.tsx',
   'src/components/AssetLibraryPanel.tsx',
   'src/components/CollaborationPanel.tsx',
@@ -15,7 +18,7 @@ const files = [
 ];
 
 const bannedVisiblePhrases = [
-  'Professional Director Station', 'Digital Director Workspace',
+  'Professional Director Station', 'Digital Director Workspace', 'Loading workspace',
   'Asset Registry', 'AI Production', 'PIPELINE INTEROPERABILITY',
   'AUTHENTICATED COLLABORATION', 'FRAME REVIEW', 'FRAME COMMENTS',
   'IMMUTABLE VERSIONS', 'PROJECT MEMBERS', 'APPROVAL AUDIT',
@@ -28,6 +31,7 @@ const bannedVisiblePhrases = [
   'OPENUSD SCENE COMPOSITION', 'PROJECT COLOR', 'LOOK REFERENCES',
   'STORAGE / MEDIA PROXY POLICY', 'SCRIPT BREAKDOWN', 'STRUCTURE ANALYSIS',
   'MODEL PROFILE / GENERATION', 'GENERATED MEDIA / APPROVAL',
+  '>PROJECT<', '>SHOT CONTENTS<', '>Characters<', '>Cameras<', '>Lights<', '>Audio<', '>Assets<', '>PIPELINE SPACE<',
 ];
 
 const texts = await Promise.all(files.map(async (file) => [file, await fs.readFile(file, 'utf8')]));
@@ -38,5 +42,5 @@ for (const [file, text] of texts) {
   }
 }
 
-const allowedStandards = ['USD', 'USDA', 'OTIO', 'OCIO', 'ACES', 'MaterialX', 'GLB', 'FBX', 'SHA-256', 'MP4', 'IK', 'FK', 'Pole', 'PDS', 'WebGL', 'IndexedDB', 'CC0'];
-console.log(`PDS 中文界面审计通过：${files.length} 个核心工作区无已知英文界面残留；行业标准缩写保留：${allowedStandards.join(', ')}。`);
+const allowedStandards = ['USD', 'USDA', 'OTIO', 'OCIO', 'ACES', 'MaterialX', 'GLB', 'FBX', 'SHA-256', 'MP4', 'IK', 'FK', 'Pole', 'PDS', 'WebGL', 'IndexedDB', 'CC0', 'Humanoid', 'SkinnedMesh', 'f-stop', 'filmback'];
+console.log(`PDS 中文界面审计通过：${files.length} 个核心工作区无已知英文界面残留；仅保留必要行业标准词：${allowedStandards.join(', ')}。`);
