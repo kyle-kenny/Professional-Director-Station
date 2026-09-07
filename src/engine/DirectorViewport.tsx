@@ -2,16 +2,18 @@ import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
+import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
 import { useDirectorStore } from '../store/directorStore';
 import { focalLengthToVerticalFovDeg } from '../utils/math';
+import { correlatedColorTemperatureToSrgb } from '../utils/lightColor';
 import { sampleActorTransform, sampleCamera, sampleLight } from '../utils/animation';
 import { resolvePoseDefinition } from '../domain/poseLibrary';
 import type { Actor, DirectorLight, Vec3 } from '../domain/model';
 
-function tempToColor(k: number, fallback: string) {
-  if (k < 3800) return new THREE.Color('#ffd6a3');
-  if (k > 8000) return new THREE.Color('#a9c7ff');
-  return new THREE.Color(fallback);
+function directorLightColor(light: DirectorLight) {
+  const cct = correlatedColorTemperatureToSrgb(light.colorTemperatureK);
+  const color = new THREE.Color(cct.r, cct.g, cct.b).convertSRGBToLinear();
+  return color.multiply(new THREE.Color(light.color));
 }
 
 function actorAccent(actor: Actor) {
@@ -173,6 +175,7 @@ export function DirectorViewport() {
     scene.background = new THREE.Color('#14181e');
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    RectAreaLightUniformsLib.init();
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -317,12 +320,12 @@ export function DirectorViewport() {
 
     shot.lights.forEach((source) => {
       const l = sampleLight(source, playhead);
-      const color = tempToColor(l.colorTemperatureK, l.color);
+      const color = directorLightColor(l);
       let light: THREE.Light;
       if (l.type === 'ambient') light = new THREE.AmbientLight(color, l.intensity);
-      else if (l.type === 'point') light = new THREE.PointLight(color, l.intensity, 25, 2);
+      else if (l.type === 'point') light = new THREE.PointLight(color, l.intensity, 0, 2);
       else if (l.type === 'spot') {
-        const spot = new THREE.SpotLight(color, l.intensity, 30, Math.PI / 5, 0.4, 1.2);
+        const spot = new THREE.SpotLight(color, l.intensity, 0, Math.PI / 5, 0.4, 2);
         spot.target.position.set(l.target?.x ?? 0, l.target?.y ?? 1, l.target?.z ?? 0);
         r.content.add(spot.target);
         light = spot;
@@ -336,7 +339,7 @@ export function DirectorViewport() {
       }
       light.position.set(l.position.x, l.position.y, l.position.z);
       if (l.type === 'area' && l.target) light.lookAt(l.target.x, l.target.y, l.target.z);
-      light.castShadow = l.castShadow;
+      light.castShadow = l.type !== 'area' && l.type !== 'ambient' && l.castShadow;
       r.content.add(light);
       if (l.type !== 'ambient') {
         const marker = buildLightMarker(l, color);
