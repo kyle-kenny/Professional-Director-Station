@@ -73,7 +73,7 @@ try {
   const viewportBox = await viewportCanvas.boundingBox();
   if (!viewportBox || viewportBox.width < 300 || viewportBox.height < 300) throw new Error('3D viewport did not produce a usable canvas.');
   await page.getByRole('button', { name: '镜头视图', exact: true }).click();
-  await page.getByText(/1\.778:1/).waitFor();
+  await page.locator('.viewport-toolbar .lens-readout').filter({ hasText: '1.778:1' }).waitFor();
   await shot(page, 'desktop-3d-shot');
 
   await clickMode(page, '2D 站位');
@@ -137,7 +137,7 @@ try {
   await page.getByLabel('Signed collaboration token').fill(token);
   await page.getByRole('button', { name: 'Connect', exact: true }).click();
   await page.locator('.connection-state.connected').waitFor({ timeout: 10_000 });
-  await page.getByText('CI Director', { exact: true }).waitFor();
+  await page.getByText('CI Director', { exact: true }).first().waitFor();
   await page.getByText(/SHOT LOCK · owned/).waitFor({ timeout: 10_000 });
   await page.getByRole('button', { name: 'REVIEW', exact: true }).click();
   await page.locator('.status-row button.active').filter({ hasText: 'REVIEW' }).waitFor();
@@ -146,7 +146,7 @@ try {
   await shot(page, 'desktop-review-approved');
 
   await clickMode(page, '3D 导演台');
-  await page.getByText(/APPROVED · 只读/).waitFor();
+  await page.getByText(/APPROVED · 只读/).first().waitFor();
   if (!(await page.getByRole('button', { name: '撤销' }).isDisabled())) throw new Error('Undo remained enabled on an approved Shot.');
   const inspectorFrameInput = page.locator('.inspector input[type=number]').first();
   if (!(await inspectorFrameInput.isDisabled())) throw new Error('Inspector remained editable on an approved Shot.');
