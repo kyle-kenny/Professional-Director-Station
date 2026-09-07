@@ -128,7 +128,7 @@ try {
   const importButton = page.getByRole('button', { name: '导入、校验并注册资产', exact: true });
   await importButton.click();
   await page.getByText(/已注册；SHA-256/).waitFor();
-  await page.getByText(/audit-prop@v001/).waitFor();
+  await page.getByText('audit-prop@v001', { exact: true }).waitFor();
   await shot(page, 'desktop-assets');
 
   await clickMode(page, '协作/审片');
