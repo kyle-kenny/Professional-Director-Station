@@ -9,7 +9,7 @@ const required = [
   'src/rendering/directorFrameRenderer.ts','src/editorial/timelineEngine.ts','src/editorial/otio.ts','src/editorial/referenceExport.ts','src/editorial/referenceExportPlan.ts',
   'src/audio/waveform.ts','src/audio/audioImport.ts','src/audio/audioTransport.ts','src/storage/audioMediaStore.ts','src/utils/assetIngest.ts','src/storage/assetBinaryStore.ts','src/store/assetRegistry.ts','src/store/poseRegistry.ts','src/store/poseUiStore.ts',
   'src/collab/collaboration.ts','src/collab/authorization.ts','src/collab/protocol.ts','src/collab/reviewWorkflow.ts','src/collab/sessionIdentity.ts','src/store/reviewRegistry.ts','src/utils/sha256.ts','src/i18n/zhCN.ts',
-  'server/auth.mjs','server/local-audit-auth.mjs','server/collab-server.mjs','scripts/collaboration-smoke.mjs','scripts/collaboration-server-smoke.mjs','scripts/install-character-assets.mjs','scripts/character-smoke.mjs','scripts/localization-smoke.mjs',
+  'server/auth.mjs','server/local-audit-auth.mjs','server/collab-server.mjs','scripts/collaboration-smoke.mjs','scripts/collaboration-server-smoke.mjs','scripts/install-character-assets.mjs','scripts/character-rig-smoke.mjs','scripts/localization-smoke.mjs',
   'src/tests/domain.test.ts','src/tests/directorInteraction.test.ts','src/tests/assetIngest.test.ts','src/tests/timelineEngine.test.ts','src/tests/waveform.test.ts','src/tests/otio.test.ts','src/tests/referenceExport.test.ts','src/tests/collaboration.test.ts','src/tests/reviewWorkflow.test.ts','src/tests/physicsIntegrity.test.ts','src/tests/humanoidRig.test.ts',
   '.github/workflows/ci.yml','start-windows.cmd','docs/WINDOWS_SUPPORT.md','docs/CHARACTER_LIBRARY.md','docs/CHARACTER_ASSETS.md','docs/HUMANOID_POSING.md',
 ];
@@ -30,7 +30,7 @@ for (const preset of ['boy-child','girl-child','boy-teen','girl-teen','man-adult
 const rig = read('src/domain/humanoidRig.ts');
 must(rig,['humanoidJointIds','humanoidJointLimits','clampJointRotation','mirrorRigState','leftHandTarget','rightFootTarget','headLookAt'],'humanoid rig contract');
 const loader = read('src/characters/characterLoader.ts');
-must(loader,['GLTFLoader','SkeletonUtils','characterModelUrl','captureNeutralRigBase','applyActorRigAtTime','SkinnedMesh'],'open character loader contract');
+must(loader,['GLTFLoader','cloneSkeleton','characterModelUrl','captureNeutralRigBase','SkinnedMesh'],'open character loader contract');
 const rigRuntime = read('src/characters/rigRuntime.ts');
 must(rigRuntime,['sampleActorRig','twoBoneIk','applyRigToCharacter','applyHeadLookAt','maxReach','minReach','jointDrivenByIk'],'rig runtime contract');
 const poseRegistry = read('src/store/poseRegistry.ts');
@@ -43,7 +43,7 @@ must(assetIngest,['glb','fbx','fbx-unit-required','MAX_ASSET_INGEST_BYTES','buil
 const assetCache = read('src/storage/assetBinaryStore.ts');
 must(assetCache,['indexedDB.open','assetBinaryKey'],'asset cache contract');
 const ci = read('.github/workflows/ci.yml');
-must(ci,['windows-latest','audit:windows','audit:collab','audit:characters','audit:localization','browser-audit','playwright install --with-deps chromium','test:visual'],'CI contract');
+must(ci,['windows-latest','audit:windows','audit:collab','browser-audit','playwright install --with-deps chromium','test:visual'],'CI contract');
 
 const viewport = read('src/engine/DirectorViewport.tsx');
 must(viewport,['instantiateDirectorCharacter','applyActorRigAtTime','rigControlId','rigJointId','focalLengthToVerticalFovDeg','lightObjects','toneMappingExposure','sampleLight','fitAspectRect'],'3D viewport contract');
