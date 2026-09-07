@@ -1,19 +1,21 @@
-import { DirectorViewport } from './engine/DirectorViewport';
-import { DirectorFrameCanvas } from './components/DirectorFrameCanvas';
-import { FloorPlanCanvas } from './components/FloorPlanCanvas';
+import { lazy, Suspense } from 'react';
 import { Inspector } from './components/Inspector';
 import { ProjectSidebar } from './components/ProjectSidebar';
-import { TimelinePanel } from './components/TimelinePanel';
-import { ReviewWorkspace } from './components/ReviewWorkspace';
-import { PipelineWorkspace } from './components/PipelineWorkspace';
-import { AIWorkspace } from './components/AIWorkspace';
-import { AssetLibraryPanel } from './components/AssetLibraryPanel';
 import { TopBar } from './components/TopBar';
 import { useDirectorStore } from './store/directorStore';
+
+const DirectorViewport = lazy(() => import('./engine/DirectorViewport').then((module) => ({ default: module.DirectorViewport })));
+const DirectorFrameCanvas = lazy(() => import('./components/DirectorFrameCanvas').then((module) => ({ default: module.DirectorFrameCanvas })));
+const FloorPlanCanvas = lazy(() => import('./components/FloorPlanCanvas').then((module) => ({ default: module.FloorPlanCanvas })));
+const TimelinePanel = lazy(() => import('./components/TimelinePanel').then((module) => ({ default: module.TimelinePanel })));
+const ReviewWorkspace = lazy(() => import('./components/ReviewWorkspace').then((module) => ({ default: module.ReviewWorkspace })));
+const PipelineWorkspace = lazy(() => import('./components/PipelineWorkspace').then((module) => ({ default: module.PipelineWorkspace })));
+const AIWorkspace = lazy(() => import('./components/AIWorkspace').then((module) => ({ default: module.AIWorkspace })));
+const AssetLibraryPanel = lazy(() => import('./components/AssetLibraryPanel').then((module) => ({ default: module.AssetLibraryPanel })));
 
 export default function App() {
   const mode = useDirectorStore((state) => state.mode);
   const approved = useDirectorStore((state) => state.getActiveShot().status === 'APPROVED');
   const assetMode = mode === 'assets';
-  return <div className="app"><TopBar/><div className={`workspace${assetMode ? ' assets-mode' : ''}${approved ? ' approved-readonly' : ''}`}><ProjectSidebar/><main className="stage">{mode === '3d' && <DirectorViewport/>}{mode === 'floorplan' && <FloorPlanCanvas/>}{mode === 'frame' && <DirectorFrameCanvas/>}{mode === 'timeline' && <TimelinePanel/>}{mode === 'assets' && <div className="asset-stage"><AssetLibraryPanel/></div>}{mode === 'review' && <ReviewWorkspace/>}{mode === 'pipeline' && <PipelineWorkspace/>}{mode === 'ai' && <AIWorkspace/>}</main>{!assetMode && <Inspector/>}</div></div>;
+  return <div className="app"><TopBar/><div className={`workspace${assetMode ? ' assets-mode' : ''}${approved ? ' approved-readonly' : ''}`}><ProjectSidebar/><main className="stage"><Suspense fallback={<div className="stage-loading"><div className="brand-mark">PDS</div><span>Loading workspace…</span></div>}>{mode === '3d' && <DirectorViewport/>}{mode === 'floorplan' && <FloorPlanCanvas/>}{mode === 'frame' && <DirectorFrameCanvas/>}{mode === 'timeline' && <TimelinePanel/>}{mode === 'assets' && <div className="asset-stage"><AssetLibraryPanel/></div>}{mode === 'review' && <ReviewWorkspace/>}{mode === 'pipeline' && <PipelineWorkspace/>}{mode === 'ai' && <AIWorkspace/>}</Suspense></main>{!assetMode && <Inspector/>}</div></div>;
 }
