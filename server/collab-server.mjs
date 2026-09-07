@@ -2,21 +2,16 @@ import http from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { WebSocketServer, WebSocket } from 'ws';
 import { verifyCollaborationToken } from './auth.mjs';
+import { canInitializeProjectRoom, effectiveProjectRole, hasProjectPermission } from './authorization.mjs';
 
 const PORT = Number(process.env.PDS_COLLAB_PORT ?? 8787);
+const HOST = process.env.PDS_COLLAB_HOST ?? '127.0.0.1';
 const SECRET = process.env.PDS_AUTH_SECRET ?? '';
 const MAX_MESSAGE_BYTES = 16 * 1024 * 1024;
+const MAX_MESSAGES_PER_10S = 240;
 const DEFAULT_LEASE_MS = 30_000;
 const MAX_LEASE_MS = 120_000;
 const rooms = new Map();
-
-const rolePermissions = {
-  owner: new Set(['edit', 'lock', 'comment', 'submit', 'approve']),
-  director: new Set(['edit', 'lock', 'comment', 'submit', 'approve']),
-  editor: new Set(['edit', 'lock', 'comment', 'submit']),
-  reviewer: new Set(['comment']),
-  viewer: new Set(),
-};
 
 const server = http.createServer((req, res) => {
   if (req.url === '/health') {
@@ -59,18 +54,25 @@ function pruneLocks(room, now = Date.now()) {
   if (room.locks.length !== before) broadcast(room, { type: 'locks', locks: room.locks });
 }
 
+function memberRole(room, identity) {
+  return room.project?.collaboration?.members?.find((item) => item.userId === identity.sub && item.active !== false)?.role;
+}
+
 function effectiveRole(room, identity) {
-  const member = room.project?.collaboration?.members?.find((item) => item.userId === identity.sub && item.active !== false);
-  return member?.role ?? identity.role;
+  return effectiveProjectRole(identity.role, memberRole(room, identity));
 }
 
 function has(room, identity, permission) {
-  return rolePermissions[effectiveRole(room, identity)]?.has(permission) ?? false;
+  return hasProjectPermission(identity.role, memberRole(room, identity), permission);
 }
 
 function validOwnedLock(room, identity, tokens) {
   const now = Date.now();
   return room.locks.some((lock) => tokens.includes(lock.token) && lock.ownerId === identity.sub && lock.expiresAt > now);
+}
+
+function validProjectEnvelope(project, projectId) {
+  return Boolean(project && project.schemaVersion === 'pds-1' && project.id === projectId && Array.isArray(project.sequences) && Array.isArray(project.assets) && project.collaboration && typeof project.collaboration === 'object');
 }
 
 server.on('upgrade', (req, socket, head) => {
@@ -82,7 +84,7 @@ server.on('upgrade', (req, socket, head) => {
       ws.pdsIdentity = identity;
       wss.emit('connection', ws, req);
     });
-  } catch (error) {
+  } catch {
     socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n');
     socket.destroy();
   }
@@ -94,17 +96,25 @@ wss.on('connection', (ws) => {
   room.clients.add(ws);
   ws.room = room;
   ws.isAlive = true;
+  ws.rateWindowStartedAt = Date.now();
+  ws.rateMessageCount = 0;
   ws.on('pong', () => { ws.isAlive = true; });
-  send(ws, { type: 'welcome', identity, revision: room.revision, project: room.project, locks: room.locks, presence: [...room.presence.values()] });
+  send(ws, { type: 'welcome', identity: { ...identity, role: effectiveRole(room, identity) }, revision: room.revision, project: room.project, locks: room.locks, presence: [...room.presence.values()] });
 
   ws.on('message', (raw) => {
+    const now = Date.now();
+    if (now - ws.rateWindowStartedAt >= 10_000) { ws.rateWindowStartedAt = now; ws.rateMessageCount = 0; }
+    ws.rateMessageCount += 1;
+    if (ws.rateMessageCount > MAX_MESSAGES_PER_10S) { send(ws, { type: 'error', code: 'rate-limit' }); ws.close(1008, 'rate-limit'); return; }
+
     let message;
     try { message = JSON.parse(raw.toString()); } catch { send(ws, { type: 'error', code: 'invalid-json' }); return; }
     pruneLocks(room);
 
     if (message.type === 'hello') {
-      if (message.project?.id !== identity.projectId) { send(ws, { type: 'error', code: 'project-scope-mismatch' }); return; }
+      if (!validProjectEnvelope(message.project, identity.projectId)) { send(ws, { type: 'error', code: 'invalid-project-envelope' }); return; }
       if (!room.project) {
+        if (!canInitializeProjectRoom(identity.role)) { send(ws, { type: 'error', code: 'initialization-permission-denied' }); return; }
         room.project = message.project;
         room.revision = Number(message.project?.collaboration?.revision ?? 0);
       }
@@ -129,7 +139,8 @@ wss.on('connection', (ws) => {
       const existing = room.locks.find((lock) => lock.scope === message.scope && lock.targetId === message.targetId && lock.expiresAt > now);
       if (existing && existing.ownerId !== identity.sub) { send(ws, { type: 'lock-denied', reason: 'owned-by-other', lock: existing }); return; }
       room.locks = room.locks.filter((lock) => !(lock.scope === message.scope && lock.targetId === message.targetId));
-      const leaseMs = Math.min(MAX_LEASE_MS, Math.max(5_000, Number(message.leaseMs ?? DEFAULT_LEASE_MS)));
+      const requestedLease = Number(message.leaseMs ?? DEFAULT_LEASE_MS);
+      const leaseMs = Number.isFinite(requestedLease) ? Math.min(MAX_LEASE_MS, Math.max(5_000, requestedLease)) : DEFAULT_LEASE_MS;
       const lock = { token: randomUUID(), scope: message.scope, targetId: message.targetId, ownerId: identity.sub, ownerName: identity.name, expiresAt: now + leaseMs };
       room.locks.push(lock);
       broadcast(room, { type: 'locks', locks: room.locks });
@@ -148,7 +159,7 @@ wss.on('connection', (ws) => {
       if (!has(room, identity, 'edit')) { send(ws, { type: 'conflict', mutationId, reason: 'permission-denied', expectedRevision: room.revision, receivedRevision: message.baseRevision, project: room.project }); return; }
       if (Number(message.baseRevision) !== room.revision) { send(ws, { type: 'conflict', mutationId, reason: 'stale-revision', expectedRevision: room.revision, receivedRevision: message.baseRevision, project: room.project }); return; }
       if (!validOwnedLock(room, identity, Array.isArray(message.lockTokens) ? message.lockTokens : [])) { send(ws, { type: 'conflict', mutationId, reason: 'lock-required', expectedRevision: room.revision, receivedRevision: message.baseRevision, project: room.project }); return; }
-      if (!message.project || message.project.id !== identity.projectId) { send(ws, { type: 'error', code: 'project-scope-mismatch' }); return; }
+      if (!validProjectEnvelope(message.project, identity.projectId)) { send(ws, { type: 'error', code: 'invalid-project-envelope' }); return; }
       room.revision += 1;
       message.project.collaboration = { ...(message.project.collaboration ?? {}), revision: room.revision };
       room.project = message.project;
@@ -178,6 +189,6 @@ const heartbeat = setInterval(() => {
 }, 15_000);
 heartbeat.unref();
 
-server.listen(PORT, () => console.log(`PDS collaboration server listening on http://127.0.0.1:${PORT}`));
+server.listen(PORT, HOST, () => console.log(`PDS collaboration server listening on http://${HOST}:${PORT}`));
 
 for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => server.close(() => process.exit(0)));
