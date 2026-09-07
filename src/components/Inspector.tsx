@@ -22,6 +22,8 @@ const shadowSupported = (light: DirectorLight) => light.type === 'directional' |
 const intensityLabel = (light: DirectorLight) => light.type === 'point' || light.type === 'spot' ? '强度（坎德拉 cd）' : light.type === 'area' ? '强度（尼特 nit）' : '强度（相对值）';
 const ageGroupZh = { child: '儿童', teen: '青少年', adult: '成年', elderly: '老年' } as const;
 const lightTypeZh = { directional: '平行光', point: '点光', spot: '聚光灯', area: '区域光', ambient: '环境光' } as const;
+const actionZh: Record<string, string> = { idle: '静止', dialogue: '对话', hold: '保持', point: '指向', guard: '警戒', crouch: '蹲伏', sit: '坐姿', walk: '行走', 'walk-forward': '向前行走', retreat: '后退', 'cross-left': '向左横穿', 'cross-right': '向右横穿', 'pose-edit': '调姿编辑' };
+const poseLabel = (id: string) => id.startsWith('custom:') ? '自定义姿势' : posePresetList.find((pose) => pose.id === id)?.label ?? '自定义姿势';
 
 export function Inspector() {
   const shot = useDirectorStore((s) => s.getActiveShot());
@@ -55,7 +57,7 @@ export function Inspector() {
       <div className="section-title">镜头</div>
       <strong>{shot.name}</strong>
       <div className="meta">时间 {playhead.toFixed(2)} 秒 · 第 {Math.round(playhead * shot.fps)} / {Math.round(shot.duration * shot.fps)} 帧<br />状态：{shot.status === 'APPROVED' ? '已批准' : shot.status === 'REVIEW' ? '审片中' : '制作中'} · v{shot.version} · 画幅 {shot.frameAspect.toFixed(3)}:1</div>
-      {!editable && <div className="asset-message ok">已批准镜头为只读。需要修改时请在审片工作区重新打开为新的 WIP。</div>}
+      {!editable && <div className="asset-message ok">已批准镜头为只读。需要修改时请在审片工作区重新打开为新的制作中版本。</div>}
       <NumberField label="画幅比例" value={shot.frameAspect} step={0.01} disabled={!editable} onChange={setActiveShotFrameAspect} />
       <select disabled={!editable} value="" onChange={(e) => { if (e.target.value) setActiveShotFrameAspect(Number(e.target.value)); }}><option value="">画幅预设…</option>{frameAspectPresets.map((item) => <option key={item.label} value={item.value}>{item.label}</option>)}</select>
       <button className="wide" onClick={() => setMode('review')}>进入协作 / 审片 / 审批</button>
@@ -78,7 +80,7 @@ export function Inspector() {
         <div className="section-title">运动路径</div>
         <select disabled={!editable} value={motion} onChange={(e) => setMotion(e.target.value as MotionPresetId)}>{motionPresetList.map((item) => <option key={item.id} value={item.id}>{item.label} · {item.distanceM.toFixed(1)} 米</option>)}</select>
         <button disabled={!editable} className="wide" onClick={() => applyMotion(actor.id, motion)}>生成整镜头运动路径</button>
-        <div className="meta">{actor.demographics.sex === 'male' ? '男' : '女'} · {ageGroupZh[actor.demographics.ageGroup]} · {actor.demographics.ageYears} 岁 · {actor.demographics.heightM.toFixed(2)} 米<br />姿势：{actor.pose}<br />动作：{actor.action}<br />位移关键帧：{actor.path.length} · 姿势关键帧：{actor.posePath?.length ?? 0} · 眼高：{actor.eyeHeight} 米</div>
+        <div className="meta">{actor.demographics.sex === 'male' ? '男' : '女'} · {ageGroupZh[actor.demographics.ageGroup]} · {actor.demographics.ageYears} 岁 · {actor.demographics.heightM.toFixed(2)} 米<br />姿势：{poseLabel(actor.pose)}<br />动作：{actionZh[actor.action] ?? '自定义动作'}<br />位移关键帧：{actor.path.length} · 姿势关键帧：{actor.posePath?.length ?? 0} · 眼高：{actor.eyeHeight} 米</div>
       </section>
       <section><PoseEditorPanel actor={actor} /></section>
     </>}
@@ -106,7 +108,7 @@ export function Inspector() {
       <div className="section-title">灯光 / 曝光</div>
       <NumberField disabled={!editable} label="曝光补偿（EV）" value={shot.exposureEv} step={0.1} onChange={setExposure} />
       <select disabled={!editable} onChange={(e) => applyLighting(e.target.value as LightingPresetId)} defaultValue="neutral">{Object.entries(lightingPresets).map(([id, p]) => <option value={id} key={id}>{p.label}</option>)}</select>
-      <div className="light-list">{shot.lights.map((light) => <button key={light.id} className={light.id === selected ? 'active' : ''} onClick={() => selectObject(light.id)}>{light.name}<span>{lightTypeZh[light.type]} · {light.path.length}K</span></button>)}</div>
+      <div className="light-list">{shot.lights.map((light) => <button key={light.id} className={light.id === selected ? 'active' : ''} onClick={() => selectObject(light.id)}>{light.name}<span>{lightTypeZh[light.type]} · {light.path.length} 个关键帧</span></button>)}</div>
       <div className="meta">ACES Filmic 预览 · 曝光补偿范围 -8EV ～ +8EV。点光/聚光灯使用 cd；区域光使用亮度量级；平行光/环境光为预览相对强度。</div>
     </section>
   </aside>;
