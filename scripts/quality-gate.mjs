@@ -79,7 +79,7 @@ for (const role of ['owner', 'director', 'editor', 'reviewer', 'viewer']) if (!a
 const protocol = read('src/collab/protocol.ts');
 for (const contract of ['baseRevision', 'stale revision', 'collaborationLockSchema', 'pruneExpiredLocks', 'hasValidLockToken']) if (!protocol.includes(contract)) failures.push(`Gate 3 conflict/lock protocol missing: ${contract}`);
 const server = read('server/collab-server.mjs');
-for (const contract of ['verifyCollaborationToken', 'stale-revision', 'lock-required', 'permission-denied', 'acquire-lock', 'presence', 'revision', 'persistRoom']) if (!server.includes(contract)) failures.push(`collaboration server authority contract missing: ${contract}`);
+for (const contract of ['verifyCollaborationToken', 'stale-revision', 'lock-required', 'permission-denied', 'acquire-lock', 'presence', 'revision', 'persistProjectState', 'loadProjectState']) if (!server.includes(contract)) failures.push(`collaboration server authority contract missing: ${contract}`);
 const auth = read('server/auth.mjs');
 for (const contract of ['createHmac', 'timingSafeEqual', "alg: 'HS256'", 'Token claim missing', 'expired']) if (!auth.includes(contract)) failures.push(`collaboration authentication contract missing: ${contract}`);
 const localAuditAuth = read('server/local-audit-auth.mjs');
