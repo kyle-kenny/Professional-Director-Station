@@ -1,4 +1,15 @@
-import { AudioBufferSource, BufferTarget, CanvasSource, Mp4OutputFormat, Output, Quality } from 'mediabunny';
+import {
+  AudioBufferSource,
+  BufferTarget,
+  CanvasSource,
+  Mp4OutputFormat,
+  Output,
+  Quality,
+  getFirstEncodableAudioCodec,
+  getFirstEncodableVideoCodec,
+  type AudioCodec,
+  type VideoCodec,
+} from 'mediabunny';
 import type { Shot } from '../domain/model';
 import { renderDirectorFrame } from '../rendering/directorFrameRenderer';
 import { renderShotAudioMixdown } from '../audio/audioTransport';
@@ -14,6 +25,8 @@ export type ReferenceExportResult = {
   blob: Blob;
   missingAudioClipIds: string[];
   frames: number;
+  videoCodec: VideoCodec;
+  audioCodec?: AudioCodec;
 };
 
 export { buildReferenceExportPlan } from './referenceExportPlan';
@@ -45,9 +58,29 @@ export function resolveReferenceExportSize(shot: Shot, options: ReferenceExportO
   return { width: even(longEdge * shot.frameAspect), height: longEdge };
 }
 
+async function chooseReferenceVideoCodec(format: Mp4OutputFormat, width: number, height: number, quality: Quality): Promise<VideoCodec> {
+  const supported = new Set(format.getSupportedVideoCodecs());
+  const preferred = (['avc', 'vp9', 'vp8', 'av1', 'hevc'] as VideoCodec[]).filter((codec) => supported.has(codec));
+  const codec = await getFirstEncodableVideoCodec(preferred, { width, height, quality });
+  if (!codec) throw new Error('当前浏览器没有可用于 MP4 Reference 的视频编码器。');
+  return codec;
+}
+
+async function chooseReferenceAudioCodec(format: Mp4OutputFormat, buffer: AudioBuffer, quality: Quality): Promise<AudioCodec> {
+  const supported = new Set(format.getSupportedAudioCodecs());
+  const preferred = (['aac', 'opus', 'mp3', 'pcm-s16'] as AudioCodec[]).filter((codec) => supported.has(codec));
+  const codec = await getFirstEncodableAudioCodec(preferred, {
+    numberOfChannels: buffer.numberOfChannels,
+    sampleRate: buffer.sampleRate,
+    quality,
+  });
+  if (!codec) throw new Error('当前浏览器没有可用于 MP4 Reference 的音频编码器。');
+  return codec;
+}
+
 export async function exportShotReferenceMp4(shot: Shot, options: ReferenceExportOptions = {}): Promise<ReferenceExportResult> {
   if (typeof document === 'undefined') throw new Error('MP4 参考导出需要浏览器 Canvas 环境。');
-  if (typeof VideoEncoder === 'undefined') throw new Error('当前浏览器没有 WebCodecs VideoEncoder，无法输出 H.264 MP4。');
+  if (typeof VideoEncoder === 'undefined') throw new Error('当前浏览器没有 WebCodecs VideoEncoder，无法输出 MP4 Reference。');
 
   const { width, height } = resolveReferenceExportSize(shot, options);
   const canvas = document.createElement('canvas');
@@ -57,15 +90,20 @@ export async function exportShotReferenceMp4(shot: Shot, options: ReferenceExpor
   if (!ctx) throw new Error('无法创建 2D Canvas 导出上下文。');
 
   const target = new BufferTarget();
-  const output = new Output({ format: new Mp4OutputFormat(), target });
-  const referenceQuality = new Quality('medium');
-  const videoSource = new CanvasSource(canvas, { codec: 'avc', quality: referenceQuality });
+  const format = new Mp4OutputFormat();
+  const output = new Output({ format, target });
+  const videoQuality = new Quality('medium');
+  const audioQuality = new Quality('medium');
+  const videoCodec = await chooseReferenceVideoCodec(format, width, height, videoQuality);
+  const videoSource = new CanvasSource(canvas, { codec: videoCodec, quality: videoQuality });
   output.addVideoTrack(videoSource, { frameRate: shot.fps });
 
   const mix = await renderShotAudioMixdown(shot);
   let audioSource: AudioBufferSource | undefined;
+  let audioCodec: AudioCodec | undefined;
   if (mix.buffer) {
-    audioSource = new AudioBufferSource({ codec: 'aac', quality: new Quality('medium') });
+    audioCodec = await chooseReferenceAudioCodec(format, mix.buffer, audioQuality);
+    audioSource = new AudioBufferSource({ codec: audioCodec, quality: audioQuality });
     output.addAudioTrack(audioSource);
   }
 
@@ -93,6 +131,8 @@ export async function exportShotReferenceMp4(shot: Shot, options: ReferenceExpor
     blob: new Blob([payload], { type: 'video/mp4' }),
     missingAudioClipIds: mix.missingClipIds,
     frames: plan.frames,
+    videoCodec,
+    audioCodec,
   };
 }
 
