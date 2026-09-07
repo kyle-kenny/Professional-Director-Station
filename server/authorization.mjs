@@ -1,5 +1,5 @@
 export const rolePermissions = {
-  owner: new Set(['edit', 'lock', 'comment', 'submit', 'approve']),
+  owner: new Set(['edit', 'lock', 'comment', 'submit', 'approve', 'members']),
   director: new Set(['edit', 'lock', 'comment', 'submit', 'approve']),
   editor: new Set(['edit', 'lock', 'comment', 'submit']),
   reviewer: new Set(['comment']),
@@ -16,6 +16,10 @@ export function effectiveProjectRole(tokenRole, memberRole) {
 
 export function hasProjectPermission(tokenRole, memberRole, permission) {
   return rolePermissions[effectiveProjectRole(tokenRole, memberRole)]?.has(permission) ?? false;
+}
+
+export function hasRolePermission(role, permission) {
+  return rolePermissions[role]?.has(permission) ?? false;
 }
 
 export function canInitializeProjectRoom(tokenRole) {
