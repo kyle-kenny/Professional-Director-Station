@@ -1,4 +1,4 @@
-import { Box, Cable, Download, Film, LayoutDashboard, Map, Redo2, Sparkles, Undo2, Upload, Users } from 'lucide-react';
+import { Box, Cable, Download, Film, LayoutDashboard, Map, Package, Redo2, Sparkles, Undo2, Upload, Users } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { useDirectorStore } from '../store/directorStore';
 
@@ -12,6 +12,7 @@ export function TopBar() {
     <button className={mode === 'floorplan' ? 'active' : ''} onClick={() => setMode('floorplan')}><Map size={16}/>2D 站位</button>
     <button className={mode === 'frame' ? 'active' : ''} onClick={() => setMode('frame')}><LayoutDashboard size={16}/>2D 构图</button>
     <button className={mode === 'timeline' ? 'active' : ''} onClick={() => setMode('timeline')}><Film size={16}/>时间线/声音</button>
+    <button className={mode === 'assets' ? 'active' : ''} onClick={() => setMode('assets')}><Package size={16}/>Asset Registry</button>
     <button className={mode === 'review' ? 'active' : ''} onClick={() => setMode('review')}><Users size={16}/>协作/审片</button>
     <button className={mode === 'pipeline' ? 'active' : ''} onClick={() => setMode('pipeline')}><Cable size={16}/>Pipeline</button>
     <button className={mode === 'ai' ? 'active' : ''} onClick={() => setMode('ai')}><Sparkles size={16}/>AI Production</button>
