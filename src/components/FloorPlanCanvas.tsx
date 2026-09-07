@@ -105,7 +105,7 @@ export function FloorPlanCanvas() {
   };
 
   return <div className="canvas-workspace">
-    <div className="canvas-header"><span className="chip">Floor Plan / 站位图</span><span>T {playhead.toFixed(2)}s · 蓝线：真实水平FOV视锥 · 黄虚线：180°轴线 · 方框：灯位</span></div>
+    <div className="canvas-header"><span className="chip">Floor Plan / 站位图</span><span>T {playhead.toFixed(2)}s · HFOV：真实水平FOV视锥 · 黄虚线：180°轴线 · 方框：灯位</span></div>
     <canvas ref={ref} onClick={click} />
   </div>;
 }
