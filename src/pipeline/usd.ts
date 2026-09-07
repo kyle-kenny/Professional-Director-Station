@@ -3,7 +3,6 @@ import type { DirectorProject, Shot, Vec3 } from '../domain/model';
 import { canonicalJson } from '../utils/sha256';
 
 const USD_METERS_PER_UNIT = 1;
-const DIRECTOR_FRAME_ASPECT = 16 / 9;
 const safeName = (value: string) => { const clean = value.normalize('NFKD').replace(/[^A-Za-z0-9_]/g, '_').replace(/^([0-9])/, '_$1'); return clean || 'Item'; };
 const q = (value: string) => JSON.stringify(value);
 const n = (value: number) => Number(value.toFixed(9));
@@ -44,8 +43,8 @@ export function shotToUsda(project: DirectorProject, shot: Shot): string {
 
   const focalUsd = millimetersToUsdCameraUnits(shot.camera.focalLengthMm);
   const horizontalApertureUsd = millimetersToUsdCameraUnits(shot.camera.sensorWidthMm);
-  const verticalApertureUsd = millimetersToUsdCameraUnits(shot.camera.sensorWidthMm / DIRECTOR_FRAME_ASPECT);
-  lines.push('    }','    def Camera "Camera"','    {','        token projection = "perspective"',`        matrix4d xformOp:transform = ${cameraTransformToUsdMatrix(shot.camera.position, shot.camera.target)}`,'        uniform token[] xformOpOrder = ["xformOp:transform"]',`        float focalLength = ${n(focalUsd)}`,`        float horizontalAperture = ${n(horizontalApertureUsd)}`,`        float verticalAperture = ${n(verticalApertureUsd)}`,`        float focusDistance = ${n(shot.camera.focusDistanceM / USD_METERS_PER_UNIT)}`,`        float fStop = ${n(shot.camera.aperture)}`,`        custom double3 pds:target = ${vec(shot.camera.target)}`,`        custom double pds:frameAspect = ${n(DIRECTOR_FRAME_ASPECT)}`);
+  const verticalApertureUsd = millimetersToUsdCameraUnits(shot.camera.sensorWidthMm / shot.frameAspect);
+  lines.push('    }','    def Camera "Camera"','    {','        token projection = "perspective"',`        matrix4d xformOp:transform = ${cameraTransformToUsdMatrix(shot.camera.position, shot.camera.target)}`,'        uniform token[] xformOpOrder = ["xformOp:transform"]',`        float focalLength = ${n(focalUsd)}`,`        float horizontalAperture = ${n(horizontalApertureUsd)}`,`        float verticalAperture = ${n(verticalApertureUsd)}`,`        float focusDistance = ${n(shot.camera.focusDistanceM / USD_METERS_PER_UNIT)}`,`        float fStop = ${n(shot.camera.aperture)}`,`        custom double3 pds:target = ${vec(shot.camera.target)}`,`        custom double pds:frameAspect = ${n(shot.frameAspect)}`);
   if (shot.camera.path.length) {
     lines.push('        matrix4d xformOp:transform.timeSamples = {');
     shot.camera.path.forEach((key, index) => lines.push(`            ${Math.round(key.time * shot.fps)}: ${cameraTransformToUsdMatrix(key.position, key.target)}${index === shot.camera.path.length - 1 ? '' : ','}`));
