@@ -15,6 +15,7 @@ export function canTransitionShotStatus(from: ShotStatus, to: ShotStatus, role: 
   if (!transitions[from].includes(to)) return false;
   if (to === 'APPROVED') return can(role, 'review:approve');
   if (to === 'REVIEW') return can(role, 'review:submit');
+  if (from === 'APPROVED' && to === 'WIP') return can(role, 'review:approve');
   return can(role, 'project:edit');
 }
 

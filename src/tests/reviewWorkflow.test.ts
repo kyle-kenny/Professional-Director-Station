@@ -9,12 +9,14 @@ describe('Gate 3 review workflow', () => {
     expect(sha256Text('')).toBe('e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855');
   });
 
-  it('restricts approval to director/owner and legal state transitions', () => {
+  it('restricts approval and approved-shot reopen to director/owner authority', () => {
     expect(canTransitionShotStatus('WIP', 'REVIEW', 'editor')).toBe(true);
     expect(canTransitionShotStatus('WIP', 'APPROVED', 'owner')).toBe(false);
     expect(canTransitionShotStatus('REVIEW', 'APPROVED', 'editor')).toBe(false);
     expect(canTransitionShotStatus('REVIEW', 'APPROVED', 'director')).toBe(true);
+    expect(canTransitionShotStatus('APPROVED', 'WIP', 'editor')).toBe(false);
     expect(canTransitionShotStatus('APPROVED', 'WIP', 'director')).toBe(true);
+    expect(canTransitionShotStatus('APPROVED', 'WIP', 'owner')).toBe(true);
   });
 
   it('freezes immutable shot snapshots and detects tampering before restore', () => {

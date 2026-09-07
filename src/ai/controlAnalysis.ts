@@ -9,8 +9,9 @@ export type AiControlBundle = {
   shotVersion: number;
   frame: number;
   fps: number;
+  frameAspect: number;
   cameraReference: {
-    position: Vec3; target: Vec3; focalLengthMm: number; sensorWidthMm: number; verticalFovDeg: number; aperture: number; focusDistanceM: number;
+    position: Vec3; target: Vec3; focalLengthMm: number; sensorWidthMm: number; frameAspect: number; verticalFovDeg: number; aperture: number; focusDistanceM: number;
   };
   pose: Array<{ actorId: string; name: string; pose: string; action: string; position: Vec3; rotation: Vec3; scale: Vec3; lookAt?: Vec3 }>;
   depth: Array<{ actorId: string; cameraDepthM: number; normalized: number }>;
@@ -39,9 +40,10 @@ export function analyzeFrameControls(shot: Shot, frame: number): AiControlBundle
     shotVersion: shot.version,
     frame: sampled.frame,
     fps: shot.fps,
+    frameAspect: shot.frameAspect,
     cameraReference: {
-      position: { ...camera.position }, target: { ...camera.target }, focalLengthMm: camera.focalLengthMm, sensorWidthMm: camera.sensorWidthMm,
-      verticalFovDeg: focalLengthToVerticalFovDeg(camera.focalLengthMm, camera.sensorWidthMm), aperture: camera.aperture, focusDistanceM: camera.focusDistanceM,
+      position: { ...camera.position }, target: { ...camera.target }, focalLengthMm: camera.focalLengthMm, sensorWidthMm: camera.sensorWidthMm, frameAspect: shot.frameAspect,
+      verticalFovDeg: focalLengthToVerticalFovDeg(camera.focalLengthMm, camera.sensorWidthMm, shot.frameAspect), aperture: camera.aperture, focusDistanceM: camera.focusDistanceM,
     },
     pose: sampled.actors.map(({ actor, transform }) => ({ actorId: actor.id, name: actor.name, pose: actor.pose, action: actor.action, position: { ...transform.position }, rotation: { ...transform.rotation }, scale: { ...transform.scale }, lookAt: actor.lookAt ? { ...actor.lookAt } : undefined })),
     depth: rawDepth.map((item) => ({ ...item, normalized: far === near ? (item.cameraDepthM > 0 ? 0.5 : 0) : Math.min(1, Math.max(0, (item.cameraDepthM - near) / span)) })),
@@ -49,7 +51,7 @@ export function analyzeFrameControls(shot: Shot, frame: number): AiControlBundle
       const feetWorld = transform.position;
       const headWorld = { x: transform.position.x, y: transform.position.y + actor.eyeHeight, z: transform.position.z };
       const centerWorld = { x: transform.position.x, y: transform.position.y + actor.demographics.heightM * 0.5, z: transform.position.z };
-      return { actorId: actor.id, head: projectWorldToFrame(headWorld, camera), center: projectWorldToFrame(centerWorld, camera), feet: projectWorldToFrame(feetWorld, camera) };
+      return { actorId: actor.id, head: projectWorldToFrame(headWorld, camera, shot.frameAspect), center: projectWorldToFrame(centerWorld, camera, shot.frameAspect), feet: projectWorldToFrame(feetWorld, camera, shot.frameAspect) };
     }),
     lights: sampled.lights.map((light) => ({ id: light.id, type: light.type, position: { ...light.position }, target: light.target ? { ...light.target } : undefined, intensity: light.intensity, colorTemperatureK: light.colorTemperatureK })),
   };

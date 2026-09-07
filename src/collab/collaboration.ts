@@ -1,5 +1,5 @@
 import * as Y from 'yjs';
-import type { DirectorProject } from '../domain/model';
+import { projectSchema, type DirectorProject } from '../domain/model';
 import type { CollaborationLock, CollaborationPresence, LockScope, ServerConflict } from './protocol';
 import type { SessionIdentity } from './sessionIdentity';
 
@@ -13,6 +13,18 @@ export type CollaborationCallbacks = {
 };
 
 type ConnectOptions = { url: string; token: string; project: DirectorProject; callbacks?: CollaborationCallbacks };
+
+export function assertSecureCollaborationUrl(value: string): string {
+  const url = new URL(value);
+  if (url.protocol !== 'ws:' && url.protocol !== 'wss:') throw new Error('Collaboration URL must use ws:// or wss://.');
+  const local = ['localhost', '127.0.0.1', '::1', '[::1]'].includes(url.hostname);
+  if (url.protocol === 'ws:' && !local) throw new Error('Remote collaboration requires wss:// so signed tokens are not sent over plaintext transport.');
+  return url.toString();
+}
+
+function parseRemoteProject(value: unknown): DirectorProject {
+  return projectSchema.parse(value);
+}
 
 export class CollaborationSession {
   readonly doc = new Y.Doc();
@@ -37,9 +49,9 @@ export class CollaborationSession {
 
   connectAuthenticated(options: ConnectOptions) {
     this.disconnectSocket(false);
-    this.options = options;
+    this.options = { ...options, url: assertSecureCollaborationUrl(options.url), project: projectSchema.parse(options.project) };
     this.intentionalClose = false;
-    this.revision = options.project.collaboration.revision;
+    this.revision = this.options.project.collaboration.revision;
     options.callbacks?.onStatus?.('connecting');
     this.openSocket();
   }
@@ -80,20 +92,20 @@ export class CollaborationSession {
       this.revision = Number(message.revision ?? 0);
       this.replaceLocks(message.locks ?? []);
       this.replacePresence(message.presence ?? []);
-      if (message.project) callbacks?.onProject?.(message.project as DirectorProject, this.revision, 'snapshot');
+      if (message.project) callbacks?.onProject?.(parseRemoteProject(message.project), this.revision, 'snapshot');
       return;
     }
     if (message.type === 'snapshot') {
       this.revision = Number(message.revision ?? 0);
       this.replaceLocks(message.locks ?? []);
       this.replacePresence(message.presence ?? []);
-      if (message.project) callbacks?.onProject?.(message.project as DirectorProject, this.revision, 'snapshot');
+      if (message.project) callbacks?.onProject?.(parseRemoteProject(message.project), this.revision, 'snapshot');
       return;
     }
     if (message.type === 'accepted') {
       this.revision = Number(message.revision ?? this.revision + 1);
       if (message.mutationId === this.pendingMutationId) this.pendingMutationId = undefined;
-      if (message.project) callbacks?.onProject?.(message.project as DirectorProject, this.revision, 'accepted');
+      if (message.project) callbacks?.onProject?.(parseRemoteProject(message.project), this.revision, 'accepted');
       this.flushQueuedMutation();
       return;
     }
@@ -103,7 +115,7 @@ export class CollaborationSession {
       this.pendingMutationId = undefined;
       this.queuedProject = undefined;
       callbacks?.onConflict?.(conflict);
-      if (conflict.project) callbacks?.onProject?.(conflict.project, conflict.expectedRevision, 'conflict');
+      if (conflict.project) callbacks?.onProject?.(parseRemoteProject(conflict.project), conflict.expectedRevision, 'conflict');
       return;
     }
     if (message.type === 'presence') { this.replacePresence(message.presence ?? []); return; }
@@ -130,10 +142,11 @@ export class CollaborationSession {
   releaseLock(token: string) { this.heldLockTokens.delete(token); this.send({ type: 'release-lock', token }); }
 
   publishProject(project: DirectorProject) {
-    this.projectMap.set('json', JSON.stringify(project));
-    if (!this.connected) { this.channel?.postMessage({ type: 'project', project }); return; }
-    if (this.pendingMutationId) { this.queuedProject = structuredClone(project); return; }
-    this.sendMutation(project);
+    const validated = projectSchema.parse(project);
+    this.projectMap.set('json', JSON.stringify(validated));
+    if (!this.connected) { this.channel?.postMessage({ type: 'project', project: validated }); return; }
+    if (this.pendingMutationId) { this.queuedProject = structuredClone(validated); return; }
+    this.sendMutation(validated);
   }
 
   private sendMutation(project: DirectorProject) {
@@ -157,7 +170,7 @@ export class CollaborationSession {
     if (typeof BroadcastChannel === 'undefined') return;
     this.channel?.close();
     this.channel = new BroadcastChannel(`pds:${roomId}`);
-    this.channel.onmessage = (event) => { if (event.data?.type === 'project') onRemoteProject(event.data.project as DirectorProject); };
+    this.channel.onmessage = (event) => { if (event.data?.type === 'project') { const parsed = projectSchema.safeParse(event.data.project); if (parsed.success) onRemoteProject(parsed.data); } };
   }
 
   private disconnectSocket(intentional = true) {

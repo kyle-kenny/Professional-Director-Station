@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useDirectorStore } from '../store/directorStore';
 import { sampleActorTransform, sampleCamera, sampleLight } from '../utils/animation';
+import { cameraGroundFrustum } from '../utils/math';
 
 const SCALE = 48;
 const actorTag = (sex: 'male' | 'female', age: 'child' | 'teen' | 'adult' | 'elderly') => {
@@ -47,14 +48,14 @@ export function FloorPlanCanvas() {
       }
 
       const cam = world(camera.position.x, camera.position.z, w, h);
-      const tgt = world(camera.target.x, camera.target.z, w, h);
-      const dx = tgt.x - cam.x, dy = tgt.y - cam.y;
-      const len = Math.max(1, Math.hypot(dx, dy));
-      const nx = dx / len, ny = dy / len, px = -ny, py = nx;
-      const spread = 70;
+      const frustum = cameraGroundFrustum(camera, 6);
+      const left = world(frustum.left.x, frustum.left.z, w, h);
+      const right = world(frustum.right.x, frustum.right.z, w, h);
+      const center = world(frustum.center.x, frustum.center.z, w, h);
       ctx.fillStyle = 'rgba(100,180,255,.12)'; ctx.strokeStyle = '#64b4ff'; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(cam.x, cam.y); ctx.lineTo(tgt.x + px * spread, tgt.y + py * spread); ctx.lineTo(tgt.x - px * spread, tgt.y - py * spread); ctx.closePath(); ctx.fill(); ctx.stroke();
-      ctx.fillStyle = '#64b4ff'; ctx.fillRect(cam.x - 8, cam.y - 6, 16, 12); ctx.fillStyle = '#dfe9f3'; ctx.fillText(`${camera.focalLengthMm.toFixed(0)}mm`, cam.x + 12, cam.y + 4);
+      ctx.beginPath(); ctx.moveTo(cam.x, cam.y); ctx.lineTo(left.x, left.y); ctx.lineTo(right.x, right.y); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.setLineDash([4, 5]); ctx.globalAlpha = .55; ctx.beginPath(); ctx.moveTo(cam.x, cam.y); ctx.lineTo(center.x, center.y); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+      ctx.fillStyle = '#64b4ff'; ctx.fillRect(cam.x - 8, cam.y - 6, 16, 12); ctx.fillStyle = '#dfe9f3'; ctx.font = '11px sans-serif'; ctx.fillText(`${camera.focalLengthMm.toFixed(0)}mm · HFOV ${frustum.horizontalFovDeg.toFixed(1)}°`, cam.x + 12, cam.y + 4);
 
       sampledActors.forEach(({ actor, transform }) => {
         const p = world(transform.position.x, transform.position.z, w, h);
@@ -104,7 +105,7 @@ export function FloorPlanCanvas() {
   };
 
   return <div className="canvas-workspace">
-    <div className="canvas-header"><span className="chip">Floor Plan / 站位图</span><span>T {playhead.toFixed(2)}s · 蓝线：摄影机视锥 · 黄虚线：180°轴线 · 方框：灯位</span></div>
+    <div className="canvas-header"><span className="chip">Floor Plan / 站位图</span><span>T {playhead.toFixed(2)}s · HFOV：真实水平FOV视锥 · 黄虚线：180°轴线 · 方框：灯位</span></div>
     <canvas ref={ref} onClick={click} />
   </div>;
 }

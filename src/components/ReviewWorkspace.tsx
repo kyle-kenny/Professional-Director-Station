@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { ProjectMember, ProjectRole } from '../domain/collaboration';
 import { useDirectorStore } from '../store/directorStore';
 import { renderDirectorFrame } from '../rendering/directorFrameRenderer';
+import { fitAspectRect } from '../utils/math';
 import { canTransitionShotStatus } from '../collab/reviewWorkflow';
 import { getSessionIdentity, subscribeSessionIdentity, type SessionIdentity } from '../collab/sessionIdentity';
 import {
@@ -43,6 +44,7 @@ export function ReviewWorkspace() {
     if (!canvas) return;
     const draw = () => {
       const rect = canvas.getBoundingClientRect();
+      const frameRect = fitAspectRect(rect.width, rect.height, shot.frameAspect);
       const dpr = Math.min(devicePixelRatio, 2);
       canvas.width = Math.max(1, Math.round(rect.width * dpr));
       canvas.height = Math.max(1, Math.round(rect.height * dpr));
@@ -57,13 +59,13 @@ export function ReviewWorkspace() {
         ctx.lineWidth = 2;
         if (item.kind === 'point') {
           const point = item.points[0];
-          const x = point.x * rect.width, y = point.y * rect.height;
+          const x = frameRect.x + point.x * frameRect.width, y = frameRect.y + point.y * frameRect.height;
           ctx.beginPath(); ctx.arc(x, y, 10, 0, Math.PI * 2); ctx.stroke();
           ctx.beginPath(); ctx.moveTo(x - 16, y); ctx.lineTo(x + 16, y); ctx.moveTo(x, y - 16); ctx.lineTo(x, y + 16); ctx.stroke();
         } else if (item.kind === 'box' && item.points.length >= 2) {
           const [a, b] = item.points;
-          const x = Math.min(a.x, b.x) * rect.width, y = Math.min(a.y, b.y) * rect.height;
-          const w = Math.abs(a.x - b.x) * rect.width, h = Math.abs(a.y - b.y) * rect.height;
+          const x = frameRect.x + Math.min(a.x, b.x) * frameRect.width, y = frameRect.y + Math.min(a.y, b.y) * frameRect.height;
+          const w = Math.abs(a.x - b.x) * frameRect.width, h = Math.abs(a.y - b.y) * frameRect.height;
           ctx.fillRect(x, y, w, h); ctx.strokeRect(x, y, w, h);
         }
         ctx.restore();
@@ -77,11 +79,19 @@ export function ReviewWorkspace() {
 
   const annotate = (event: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
-    const x = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
-    const y = Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height));
+    const frameRect = fitAspectRect(rect.width, rect.height, shot.frameAspect);
+    const localX = event.clientX - rect.left;
+    const localY = event.clientY - rect.top;
+    if (localX < frameRect.x || localX > frameRect.x + frameRect.width || localY < frameRect.y || localY > frameRect.y + frameRect.height) {
+      setMessage('批注只能添加在有效 Shot 画幅内。');
+      return;
+    }
+    const x = Math.min(1, Math.max(0, (localX - frameRect.x) / frameRect.width));
+    const y = Math.min(1, Math.max(0, (localY - frameRect.y) / frameRect.height));
     try {
       if (annotationMode === 'point') addFrameAnnotation({ kind: 'point', points: [{ x, y }], text: '' });
       else addFrameAnnotation({ kind: 'box', points: [{ x: Math.max(0, x - .06), y: Math.max(0, y - .06) }, { x: Math.min(1, x + .06), y: Math.min(1, y + .06) }], text: '' });
+      setMessage('');
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Annotation rejected'); }
   };
 
@@ -103,7 +113,7 @@ export function ReviewWorkspace() {
     <CollaborationPanel />
     <div className="review-grid">
       <section className="review-frame-card">
-        <div className="review-toolbar"><span className="chip">FRAME REVIEW · F{frame}</span><button className={annotationMode === 'point' ? 'active' : ''} onClick={() => setAnnotationMode('point')}>Point</button><button className={annotationMode === 'box' ? 'active' : ''} onClick={() => setAnnotationMode('box')}>Box</button><span>点击画面添加归一化批注</span></div>
+        <div className="review-toolbar"><span className="chip">FRAME REVIEW · F{frame}</span><button className={annotationMode === 'point' ? 'active' : ''} onClick={() => setAnnotationMode('point')}>Point</button><button className={annotationMode === 'box' ? 'active' : ''} onClick={() => setAnnotationMode('box')}>Box</button><span>点击有效画幅添加归一化批注；黑边不接受批注</span></div>
         <canvas ref={canvasRef} onClick={annotate} />
         <div className="annotation-list">{annotations.map((item) => <button key={item.id} onClick={() => removeFrameAnnotation(item.id)} title="删除自己创建的批注">{item.kind} · {item.id.slice(-8)} ×</button>)}</div>
       </section>

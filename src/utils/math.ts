@@ -1,9 +1,44 @@
 import * as THREE from 'three';
 import type { ShotCamera, Vec3 } from '../domain/model';
 
+export function focalLengthToHorizontalFovDeg(focalLengthMm: number, sensorWidthMm: number): number {
+  return THREE.MathUtils.radToDeg(2 * Math.atan(sensorWidthMm / (2 * focalLengthMm)));
+}
+
 export function focalLengthToVerticalFovDeg(focalLengthMm: number, sensorWidthMm: number, aspect = 16 / 9): number {
   const sensorHeight = sensorWidthMm / aspect;
   return THREE.MathUtils.radToDeg(2 * Math.atan(sensorHeight / (2 * focalLengthMm)));
+}
+
+export function fitAspectRect(width: number, height: number, aspect: number): { x: number; y: number; width: number; height: number } {
+  const safeWidth = Math.max(1, width);
+  const safeHeight = Math.max(1, height);
+  const safeAspect = Math.max(0.01, aspect);
+  if (safeWidth / safeHeight > safeAspect) {
+    const fittedWidth = safeHeight * safeAspect;
+    return { x: (safeWidth - fittedWidth) / 2, y: 0, width: fittedWidth, height: safeHeight };
+  }
+  const fittedHeight = safeWidth / safeAspect;
+  return { x: 0, y: (safeHeight - fittedHeight) / 2, width: safeWidth, height: fittedHeight };
+}
+
+export function cameraGroundFrustum(camera: ShotCamera, distanceM = 6): { left: { x: number; z: number }; right: { x: number; z: number }; center: { x: number; z: number }; horizontalFovDeg: number } {
+  const dx = camera.target.x - camera.position.x;
+  const dz = camera.target.z - camera.position.z;
+  const groundLength = Math.hypot(dx, dz);
+  const fx = groundLength > 1e-9 ? dx / groundLength : 0;
+  const fz = groundLength > 1e-9 ? dz / groundLength : -1;
+  const half = THREE.MathUtils.degToRad(focalLengthToHorizontalFovDeg(camera.focalLengthMm, camera.sensorWidthMm) / 2);
+  const rotate = (x: number, z: number, angle: number) => ({ x: x * Math.cos(angle) - z * Math.sin(angle), z: x * Math.sin(angle) + z * Math.cos(angle) });
+  const leftDir = rotate(fx, fz, half);
+  const rightDir = rotate(fx, fz, -half);
+  const distance = Math.max(0.1, distanceM);
+  return {
+    left: { x: camera.position.x + leftDir.x * distance, z: camera.position.z + leftDir.z * distance },
+    right: { x: camera.position.x + rightDir.x * distance, z: camera.position.z + rightDir.z * distance },
+    center: { x: camera.position.x + fx * distance, z: camera.position.z + fz * distance },
+    horizontalFovDeg: focalLengthToHorizontalFovDeg(camera.focalLengthMm, camera.sensorWidthMm),
+  };
 }
 
 export function projectWorldToFrame(point: Vec3, camera: ShotCamera, aspect = 16 / 9): { x: number; y: number; visible: boolean } {

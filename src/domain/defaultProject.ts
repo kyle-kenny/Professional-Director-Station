@@ -25,7 +25,7 @@ export const createDefaultProject = (): DirectorProject => ({
   updatedAt: new Date().toISOString(),
   sequences: [{
     id: 'seq-001', name: 'SEQ 001', shots: [{
-      id: 'shot-001', name: 'SHOT 001A — 双人对话', status: 'WIP', version: 1, duration: 8, fps: 24,
+      id: 'shot-001', name: 'SHOT 001A — 双人对话', status: 'WIP', version: 1, duration: 8, fps: 24, frameAspect: 16 / 9,
       script: 'A 与 B 对话。演示站位、焦段、轴线和灯光。',
       actors: [
         { ...createActorFromPreset('man-adult', 1, -1.3, 0), id: 'actor-a', name: '角色 A · 成年男', transform: { position: { x: -1.3, y: 0, z: 0 }, rotation: { x: 0, y: -Math.PI / 2, z: 0 }, scale: { x: 1, y: 1, z: 1 } }, lookAt: { x: 1.3, y: 1.53, z: 0 } },
