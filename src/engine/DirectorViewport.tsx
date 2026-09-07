@@ -4,7 +4,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
 import { useDirectorStore } from '../store/directorStore';
-import { focalLengthToVerticalFovDeg } from '../utils/math';
+import { fitAspectRect, focalLengthToVerticalFovDeg } from '../utils/math';
 import { correlatedColorTemperatureToSrgb } from '../utils/lightColor';
 import { sampleActorTransform, sampleCamera, sampleLight } from '../utils/animation';
 import { resolvePoseDefinition } from '../domain/poseLibrary';
@@ -52,12 +52,15 @@ function buildDirectorActor(actor: Actor) {
   const hipW = d.shoulderWidthM * (d.sex === 'female' ? 0.78 : 0.72);
   const limbR = Math.max(0.035, d.shoulderWidthM * 0.095);
 
+  const torsoPivot = new THREE.Group();
+  torsoPivot.position.y = legH;
+  applyRotation(torsoPivot, pose.jointRotations.torso);
   const torso = new THREE.Mesh(new THREE.BoxGeometry(d.shoulderWidthM, torsoH, d.bodyDepthM), cloth);
-  torso.position.y = legH + torsoH / 2;
+  torso.position.y = torsoH / 2;
   torso.castShadow = true;
   torso.userData.actorId = actor.id;
-  applyRotation(torso, pose.jointRotations.torso);
-  rig.add(torso);
+  torsoPivot.add(torso);
+  rig.add(torsoPivot);
 
   const pelvis = new THREE.Mesh(new THREE.BoxGeometry(hipW, Math.max(0.10, h * 0.07), d.bodyDepthM * 0.92), dark);
   pelvis.position.y = legH - h * 0.025;
@@ -65,43 +68,48 @@ function buildDirectorActor(actor: Actor) {
   pelvis.userData.actorId = actor.id;
   rig.add(pelvis);
 
+  const headPivot = new THREE.Group();
+  headPivot.position.y = h - headR * 2;
+  applyRotation(headPivot, pose.jointRotations.head);
   const head = new THREE.Mesh(new THREE.SphereGeometry(headR, 20, 16), skin);
-  head.position.y = h - headR;
+  head.position.y = headR;
   head.castShadow = true;
   head.userData.actorId = actor.id;
-  applyRotation(head, pose.jointRotations.head);
-  rig.add(head);
+  headPivot.add(head);
+  rig.add(headPivot);
 
   const legGeom = new THREE.CapsuleGeometry(limbR, Math.max(0.08, legH - limbR * 2), 5, 10);
-  const leftLeg = new THREE.Mesh(legGeom, dark);
-  leftLeg.position.set(-hipW * 0.23, legH / 2, 0);
-  leftLeg.castShadow = true;
-  leftLeg.userData.actorId = actor.id;
-  applyRotation(leftLeg, pose.jointRotations.leftLeg);
-  rig.add(leftLeg);
-  const rightLeg = new THREE.Mesh(legGeom, dark);
-  rightLeg.position.set(hipW * 0.23, legH / 2, 0);
-  rightLeg.castShadow = true;
-  rightLeg.userData.actorId = actor.id;
-  applyRotation(rightLeg, pose.jointRotations.rightLeg);
-  rig.add(rightLeg);
+  const addLeg = (side: 'left' | 'right', x: number) => {
+    const pivot = new THREE.Group();
+    pivot.position.set(x, legH, 0);
+    applyRotation(pivot, pose.jointRotations[side === 'left' ? 'leftLeg' : 'rightLeg']);
+    const mesh = new THREE.Mesh(legGeom, dark);
+    mesh.position.y = -legH / 2;
+    mesh.castShadow = true;
+    mesh.userData.actorId = actor.id;
+    pivot.add(mesh);
+    rig.add(pivot);
+  };
+  addLeg('left', -hipW * 0.23);
+  addLeg('right', hipW * 0.23);
 
   const armLen = Math.max(0.28, torsoH * 0.92);
   const armGeom = new THREE.CapsuleGeometry(limbR * 0.82, Math.max(0.06, armLen - limbR * 1.64), 5, 10);
-  const leftArm = new THREE.Mesh(armGeom, skin);
-  leftArm.position.set(-(d.shoulderWidthM / 2 + limbR * 0.4), legH + torsoH * 0.52, 0);
-  leftArm.rotation.z = -0.035;
-  leftArm.castShadow = true;
-  leftArm.userData.actorId = actor.id;
-  applyRotation(leftArm, pose.jointRotations.leftArm);
-  rig.add(leftArm);
-  const rightArm = new THREE.Mesh(armGeom, skin);
-  rightArm.position.set(d.shoulderWidthM / 2 + limbR * 0.4, legH + torsoH * 0.52, 0);
-  rightArm.rotation.z = 0.035;
-  rightArm.castShadow = true;
-  rightArm.userData.actorId = actor.id;
-  applyRotation(rightArm, pose.jointRotations.rightArm);
-  rig.add(rightArm);
+  const shoulderY = legH + torsoH * 0.82;
+  const addArm = (side: 'left' | 'right', x: number) => {
+    const pivot = new THREE.Group();
+    pivot.position.set(x, shoulderY, 0);
+    pivot.rotation.z = side === 'left' ? -0.035 : 0.035;
+    applyRotation(pivot, pose.jointRotations[side === 'left' ? 'leftArm' : 'rightArm']);
+    const mesh = new THREE.Mesh(armGeom, skin);
+    mesh.position.y = -armLen / 2;
+    mesh.castShadow = true;
+    mesh.userData.actorId = actor.id;
+    pivot.add(mesh);
+    rig.add(pivot);
+  };
+  addArm('left', -(d.shoulderWidthM / 2 + limbR * 0.15));
+  addArm('right', d.shoulderWidthM / 2 + limbR * 0.15);
 
   const facing = new THREE.ArrowHelper(new THREE.Vector3(0, 0, -1), new THREE.Vector3(0, Math.min(h * 0.82, actor.eyeHeight), 0), Math.max(0.4, h * 0.32), 0xffd166, 0.13, 0.08);
   rig.add(facing);
@@ -145,6 +153,7 @@ export function DirectorViewport() {
   const [viewMode, setViewMode] = useState<'director' | 'shot'>('director');
   const viewModeRef = useRef(viewMode);
   const shot = useDirectorStore((s) => s.getActiveShot());
+  const shotAspectRef = useRef(shot.frameAspect);
   const playhead = useDirectorStore((s) => s.playhead);
   const selectedObjectId = useDirectorStore((s) => s.selectedObjectId);
   const selectObject = useDirectorStore((s) => s.selectObject);
@@ -152,21 +161,23 @@ export function DirectorViewport() {
   const setTransformMode = useDirectorStore((s) => s.setTransformMode);
   const sampledCamera = sampleCamera(shot.camera, playhead);
   const selectedIsLight = shot.lights.some((light) => light.id === selectedObjectId);
+  const shotEditable = shot.status !== 'APPROVED';
 
   useEffect(() => { viewModeRef.current = viewMode; }, [viewMode]);
+  useEffect(() => { shotAspectRef.current = shot.frameAspect; }, [shot.frameAspect]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       const editable = target?.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName ?? '');
-      if (editable || event.ctrlKey || event.metaKey || event.altKey) return;
+      if (editable || !shotEditable || event.ctrlKey || event.metaKey || event.altKey) return;
       if (event.key.toLowerCase() === 'w') setTransformMode('translate');
       else if (!selectedIsLight && event.key.toLowerCase() === 'e') setTransformMode('rotate');
       else if (!selectedIsLight && event.key.toLowerCase() === 'r') setTransformMode('scale');
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [setTransformMode, selectedIsLight]);
+  }, [setTransformMode, selectedIsLight, shotEditable]);
 
   useEffect(() => {
     if (!mountRef.current) return;
@@ -181,11 +192,12 @@ export function DirectorViewport() {
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.autoClear = false;
     host.appendChild(renderer.domElement);
 
     const editorCamera = new THREE.PerspectiveCamera(48, 1, 0.01, 500);
     editorCamera.position.set(7.5, 5.5, 8.5);
-    const shotCamera = new THREE.PerspectiveCamera(40, 1, 0.01, 500);
+    const shotCamera = new THREE.PerspectiveCamera(40, shotAspectRef.current, 0.01, 500);
 
     const controls = new OrbitControls(editorCamera, renderer.domElement);
     controls.target.set(0, 1, 0);
@@ -219,7 +231,7 @@ export function DirectorViewport() {
       renderer.setSize(w, h, false);
       editorCamera.aspect = w / h;
       editorCamera.updateProjectionMatrix();
-      shotCamera.aspect = w / h;
+      shotCamera.aspect = shotAspectRef.current;
       shotCamera.updateProjectionMatrix();
     }
     resize();
@@ -231,8 +243,20 @@ export function DirectorViewport() {
     const onPointerDown = (ev: PointerEvent) => {
       if (transform.dragging) return;
       const rect = renderer.domElement.getBoundingClientRect();
-      pointer.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
-      pointer.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
+      let localX = ev.clientX - rect.left;
+      let localY = ev.clientY - rect.top;
+      let targetWidth = rect.width;
+      let targetHeight = rect.height;
+      if (viewModeRef.current === 'shot') {
+        const frame = fitAspectRect(rect.width, rect.height, shotAspectRef.current);
+        if (localX < frame.x || localX > frame.x + frame.width || localY < frame.y || localY > frame.y + frame.height) return;
+        localX -= frame.x;
+        localY -= frame.y;
+        targetWidth = frame.width;
+        targetHeight = frame.height;
+      }
+      pointer.x = (localX / targetWidth) * 2 - 1;
+      pointer.y = -(localY / targetHeight) * 2 + 1;
       raycaster.setFromCamera(pointer, viewModeRef.current === 'shot' ? shotCamera : editorCamera);
       const hits = raycaster.intersectObjects(content.children, true);
       const object = hits[0]?.object;
@@ -243,7 +267,7 @@ export function DirectorViewport() {
 
     const onTransformEnd = () => {
       const object = transform.object;
-      if (!object) return;
+      if (!object || useDirectorStore.getState().getActiveShot().status === 'APPROVED') return;
       const actorId = object.userData.actorId as string | undefined;
       const lightId = object.userData.lightId as string | undefined;
       if (actorId) {
@@ -262,7 +286,27 @@ export function DirectorViewport() {
     const animate = () => {
       controls.enabled = viewModeRef.current === 'director' && !transform.dragging;
       controls.update();
-      renderer.render(scene, viewModeRef.current === 'shot' ? shotCamera : editorCamera);
+      const width = renderer.domElement.clientWidth || 1;
+      const height = renderer.domElement.clientHeight || 1;
+      renderer.setScissorTest(false);
+      renderer.setViewport(0, 0, width, height);
+      renderer.setClearColor(0x080b0f, 1);
+      renderer.clear(true, true, true);
+      if (viewModeRef.current === 'shot') {
+        const frame = fitAspectRect(width, height, shotAspectRef.current);
+        const bottom = height - frame.y - frame.height;
+        renderer.setViewport(frame.x, bottom, frame.width, frame.height);
+        renderer.setScissor(frame.x, bottom, frame.width, frame.height);
+        renderer.setScissorTest(true);
+        renderer.setClearColor(0x14181e, 1);
+        renderer.clear(true, true, true);
+        renderer.render(scene, shotCamera);
+        renderer.setScissorTest(false);
+      } else {
+        renderer.setClearColor(0x14181e, 1);
+        renderer.clear(true, true, true);
+        renderer.render(scene, editorCamera);
+      }
       raf = requestAnimationFrame(animate);
     };
     animate();
@@ -349,29 +393,30 @@ export function DirectorViewport() {
     });
 
     const cameraAtTime = sampleCamera(shot.camera, playhead);
-    r.shotCamera.fov = focalLengthToVerticalFovDeg(cameraAtTime.focalLengthMm, cameraAtTime.sensorWidthMm, r.shotCamera.aspect);
+    r.shotCamera.aspect = shot.frameAspect;
+    r.shotCamera.fov = focalLengthToVerticalFovDeg(cameraAtTime.focalLengthMm, cameraAtTime.sensorWidthMm, shot.frameAspect);
     r.shotCamera.position.set(cameraAtTime.position.x, cameraAtTime.position.y, cameraAtTime.position.z);
     r.shotCamera.lookAt(cameraAtTime.target.x, cameraAtTime.target.y, cameraAtTime.target.z);
     r.shotCamera.updateProjectionMatrix();
     r.content.add(new THREE.CameraHelper(r.shotCamera));
 
     const selected = selectedObjectId ? r.actorObjects.get(selectedObjectId) ?? r.lightObjects.get(selectedObjectId) : undefined;
-    if (selected && viewMode === 'director') {
+    if (selected && viewMode === 'director' && shotEditable) {
       r.transform.camera = r.editorCamera;
       r.transform.attach(selected);
     }
-  }, [shot, selectedObjectId, viewMode, playhead]);
+  }, [shot, selectedObjectId, viewMode, playhead, shotEditable]);
 
   return <div className="viewport-shell">
     <div className="viewport-toolbar">
       <span className="chip">3D Blocking / Previs</span>
       <button className={viewMode === 'director' ? 'active' : ''} onClick={() => setViewMode('director')}>导演视图</button>
       <button className={viewMode === 'shot' ? 'active' : ''} onClick={() => setViewMode('shot')}>镜头视图</button>
-      <button className={transformMode === 'translate' ? 'active' : ''} onClick={() => setTransformMode('translate')} title="W">移动 W</button>
-      <button disabled={selectedIsLight} className={!selectedIsLight && transformMode === 'rotate' ? 'active' : ''} onClick={() => setTransformMode('rotate')} title="E">旋转 E</button>
-      <button disabled={selectedIsLight} className={!selectedIsLight && transformMode === 'scale' ? 'active' : ''} onClick={() => setTransformMode('scale')} title="R">缩放 R</button>
-      <span>{selectedIsLight ? '灯具 Gizmo · 世界坐标 · 5cm Snap' : '5cm · 15° · 5% Snap'}</span>
-      <span className="lens-readout">T {playhead.toFixed(2)}s · {sampledCamera.focalLengthMm.toFixed(0)}mm · f/{sampledCamera.aperture} · EV {shot.exposureEv >= 0 ? '+' : ''}{shot.exposureEv.toFixed(1)}</span>
+      <button disabled={!shotEditable} className={shotEditable && transformMode === 'translate' ? 'active' : ''} onClick={() => setTransformMode('translate')} title="W">移动 W</button>
+      <button disabled={!shotEditable || selectedIsLight} className={shotEditable && !selectedIsLight && transformMode === 'rotate' ? 'active' : ''} onClick={() => setTransformMode('rotate')} title="E">旋转 E</button>
+      <button disabled={!shotEditable || selectedIsLight} className={shotEditable && !selectedIsLight && transformMode === 'scale' ? 'active' : ''} onClick={() => setTransformMode('scale')} title="R">缩放 R</button>
+      <span>{shotEditable ? (selectedIsLight ? '灯具 Gizmo · 世界坐标 · 5cm Snap' : '5cm · 15° · 5% Snap') : 'APPROVED · 只读；请在 Review 中创建新 WIP'}</span>
+      <span className="lens-readout">T {playhead.toFixed(2)}s · {sampledCamera.focalLengthMm.toFixed(0)}mm · f/{sampledCamera.aperture} · {shot.frameAspect.toFixed(3)}:1 · EV {shot.exposureEv >= 0 ? '+' : ''}{shot.exposureEv.toFixed(1)}</span>
     </div>
     <div className="viewport" ref={mountRef} />
   </div>;
