@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import type { Actor, DirectorProject, Shot } from '../domain/model';
 import { poseLibrary, type PosePresetId } from '../domain/poseLibrary';
 import {
@@ -17,6 +18,7 @@ import { presetRigForActor, sampleActorRig } from '../characters/rigRuntime';
 import { getSessionIdentity } from '../collab/sessionIdentity';
 import { requirePermission } from '../collab/authorization';
 import { snapTimeToFrame } from '../editorial/timelineEngine';
+import { sampleActorTransform } from '../utils/animation';
 import { recordProjectHistory } from './projectHistory';
 import { useDirectorStore } from './directorStore';
 
@@ -37,7 +39,7 @@ function activeShot(project: DirectorProject): Shot {
 function requireEditable(shot: Shot) {
   const identity = getSessionIdentity();
   requirePermission(identity.role, 'project:edit');
-  if (shot.status === 'APPROVED') throw new Error('已批准镜头为只读；请先在审片工作区重新打开为新的 WIP。');
+  if (shot.status === 'APPROVED') throw new Error('已批准镜头为只读；请先在审片工作区重新打开为新的制作中版本。');
   return identity;
 }
 
@@ -84,6 +86,27 @@ function editableRig(actor: Actor) {
   return sampleActorRig(actor, useDirectorStore.getState().playhead);
 }
 
+function actorAnchorMatrix(actor: Actor, time: number) {
+  const transform = sampleActorTransform(actor, time);
+  return new THREE.Matrix4().compose(
+    new THREE.Vector3(transform.position.x, transform.position.y, transform.position.z),
+    new THREE.Quaternion().setFromEuler(new THREE.Euler(transform.rotation.x, transform.rotation.y, transform.rotation.z, 'XYZ')),
+    new THREE.Vector3(transform.scale.x, transform.scale.y, transform.scale.z),
+  );
+}
+
+function localRigPointToWorld(actor: Actor, rig: HumanoidRigState, local: RigVec3): RigVec3 {
+  const time = useDirectorStore.getState().playhead;
+  const point = new THREE.Vector3(local.x, local.y + rig.rootOffsetY, local.z).applyMatrix4(actorAnchorMatrix(actor, time));
+  return { x: point.x, y: point.y, z: point.z };
+}
+
+function worldPointToLocalRig(actor: Actor, rig: HumanoidRigState, world: RigVec3): RigVec3 {
+  const time = useDirectorStore.getState().playhead;
+  const point = new THREE.Vector3(world.x, world.y, world.z).applyMatrix4(actorAnchorMatrix(actor, time).invert());
+  return { x: point.x, y: point.y - rig.rootOffsetY, z: point.z };
+}
+
 export function applyPresetPose(actorId: string, presetId: PosePresetId) {
   commitPose((_project, shot) => {
     const actor = actorById(shot, actorId);
@@ -119,6 +142,7 @@ export function setActorIkEnabled(actorId: string, limb: IkLimbId, enabled: bool
     const rig = editableRig(actor);
     const defaults = defaultIkPlacement(actor.demographics.heightM, limb);
     rig.ik[limb] = { ...rig.ik[limb], enabled, target: rig.ik[limb].target ?? defaults.target, pole: rig.ik[limb].pole ?? defaults.pole };
+    if (!enabled) { rig.ik[limb].locked = false; rig.ik[limb].lockedWorldTarget = undefined; }
     writeRig(actor, shot, rig);
   });
 }
@@ -127,7 +151,18 @@ export function setActorIkLocked(actorId: string, limb: IkLimbId, locked: boolea
   commitPose((_project, shot) => {
     const actor = actorById(shot, actorId);
     const rig = editableRig(actor);
-    rig.ik[limb].locked = locked;
+    const defaults = defaultIkPlacement(actor.demographics.heightM, limb);
+    const state = rig.ik[limb];
+    state.target ??= defaults.target;
+    state.pole ??= defaults.pole;
+    if (locked) {
+      state.lockedWorldTarget = localRigPointToWorld(actor, rig, state.target!);
+      state.locked = true;
+    } else {
+      if (state.lockedWorldTarget) state.target = worldPointToLocalRig(actor, rig, state.lockedWorldTarget);
+      state.lockedWorldTarget = undefined;
+      state.locked = false;
+    }
     writeRig(actor, shot, rig);
   });
 }
@@ -136,7 +171,7 @@ export function setActorIkTarget(actorId: string, limb: IkLimbId, target: RigVec
   commitPose((_project, shot) => {
     const actor = actorById(shot, actorId);
     const rig = editableRig(actor);
-    if (rig.ik[limb].locked) throw new Error('该 IK 目标已锁定，请先解锁。');
+    if (rig.ik[limb].locked) throw new Error('该 IK 目标已锁定到世界空间，请先解锁。');
     rig.ik[limb].target = { ...target };
     rig.ik[limb].enabled = true;
     writeRig(actor, shot, rig);
@@ -147,7 +182,7 @@ export function setActorIkPole(actorId: string, limb: IkLimbId, pole: RigVec3) {
   commitPose((_project, shot) => {
     const actor = actorById(shot, actorId);
     const rig = editableRig(actor);
-    if (rig.ik[limb].locked) throw new Error('该 IK 目标已锁定，请先解锁。');
+    if (rig.ik[limb].locked) throw new Error('该 IK 目标已锁定到世界空间，请先解锁。');
     rig.ik[limb].pole = { ...pole };
     rig.ik[limb].enabled = true;
     writeRig(actor, shot, rig);
@@ -221,13 +256,7 @@ export function saveCustomPose(actorId: string, name: string): CustomPose {
   commitPose((project, shot) => {
     const actor = actorById(shot, actorId);
     const identity = getSessionIdentity();
-    result = {
-      id: `pose-${crypto.randomUUID()}`,
-      name: trimmed,
-      rig: humanoidRigStateSchema.parse(editableRig(actor)),
-      createdAt: new Date().toISOString(),
-      createdBy: identity.userId,
-    };
+    result = { id: `pose-${crypto.randomUUID()}`, name: trimmed, rig: humanoidRigStateSchema.parse(editableRig(actor)), createdAt: new Date().toISOString(), createdBy: identity.userId };
     project.customPoses ??= [];
     project.customPoses.push(result);
   });
