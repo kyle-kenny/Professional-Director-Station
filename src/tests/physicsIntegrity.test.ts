@@ -3,8 +3,9 @@ import { actorPresetList, createActorFromPreset } from '../domain/actorLibrary';
 import { createActorMotionPath, motionPresetList } from '../domain/actorMotions';
 import { lightingPresets } from '../domain/presets';
 import { correlatedColorTemperatureToSrgb } from '../utils/lightColor';
-import { focalLengthToVerticalFovDeg, projectWorldToFrame } from '../utils/math';
+import { cameraGroundFrustum, fitAspectRect, focalLengthToHorizontalFovDeg, focalLengthToVerticalFovDeg, projectWorldToFrame } from '../utils/math';
 import { createDefaultProject } from '../domain/defaultProject';
+import { projectSchema } from '../domain/model';
 
 describe('release physics integrity', () => {
   it('uses physically consistent filmback focal-length geometry', () => {
@@ -14,12 +15,39 @@ describe('release physics integrity', () => {
     expect(fov50).toBeCloseTo(22.895, 2);
     expect(fov24).toBeGreaterThan(fov50);
     expect(fov85).toBeLessThan(fov50);
+    expect(focalLengthToHorizontalFovDeg(50, 36)).toBeCloseTo(39.598, 2);
 
     const camera = createDefaultProject().sequences[0].shots[0].camera;
     const center = projectWorldToFrame(camera.target, camera, 16 / 9);
     expect(center.visible).toBe(true);
     expect(center.x).toBeCloseTo(0.5, 5);
     expect(center.y).toBeCloseTo(0.5, 5);
+  });
+
+  it('keeps shot framing stable when the UI container aspect changes', () => {
+    const wide = fitAspectRect(1600, 700, 16 / 9);
+    expect(wide.height).toBe(700);
+    expect(wide.width / wide.height).toBeCloseTo(16 / 9, 8);
+    expect(wide.x).toBeGreaterThan(0);
+    const tall = fitAspectRect(700, 1200, 16 / 9);
+    expect(tall.width).toBe(700);
+    expect(tall.width / tall.height).toBeCloseTo(16 / 9, 8);
+    expect(tall.y).toBeGreaterThan(0);
+
+    const project = createDefaultProject();
+    const legacy: any = structuredClone(project);
+    delete legacy.sequences[0].shots[0].frameAspect;
+    expect(projectSchema.parse(legacy).sequences[0].shots[0].frameAspect).toBeCloseTo(16 / 9, 8);
+  });
+
+  it('derives floor-plan frustum width from real focal length and sensor width', () => {
+    const camera = createDefaultProject().sequences[0].shots[0].camera;
+    const wideCamera = { ...camera, focalLengthMm: 18 };
+    const teleCamera = { ...camera, focalLengthMm: 200 };
+    const wide = cameraGroundFrustum(wideCamera, 6);
+    const tele = cameraGroundFrustum(teleCamera, 6);
+    expect(wide.horizontalFovDeg).toBeGreaterThan(tele.horizontalFovDeg);
+    expect(Math.hypot(wide.left.x - wide.right.x, wide.left.z - wide.right.z)).toBeGreaterThan(Math.hypot(tele.left.x - tele.right.x, tele.left.z - tele.right.z));
   });
 
   it('keeps standard cast anthropometry inside plausible blocking bounds', () => {
