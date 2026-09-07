@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { actorSchema, type Actor } from '../domain/model';
 import { clampJointRotation, emptyRigState, mirrorRigState } from '../domain/humanoidRig';
-import { applyRigToCharacter, captureNeutralRigBase, sampleActorRig } from '../characters/rigRuntime';
+import { applyAdditiveJointRotationToBone, applyRigToCharacter, captureNeutralRigBase, readAdditiveJointRotation, sampleActorRig } from '../characters/rigRuntime';
 
 function actorFixture(): Actor {
   return actorSchema.parse({
@@ -13,6 +13,16 @@ function actorFixture(): Actor {
   });
 }
 
+function armChain() {
+  const root = new THREE.Group();
+  const upper = new THREE.Bone(); upper.name = 'upperarm_l';
+  const lower = new THREE.Bone(); lower.name = 'lowerarm_l'; lower.position.set(0, 1, 0);
+  const hand = new THREE.Bone(); hand.name = 'hand_l'; hand.position.set(0, 1, 0);
+  upper.add(lower); lower.add(hand); root.add(upper);
+  captureNeutralRigBase(root);
+  return { root, upper, lower, hand };
+}
+
 describe('humanoid rig', () => {
   it('clamps additive rotations to director-safe joint limits', () => {
     const result = clampJointRotation('calf_l', { x: -Math.PI, y: Math.PI, z: Math.PI });
@@ -21,14 +31,25 @@ describe('humanoid rig', () => {
     expect(result.z).toBeCloseTo(20 * Math.PI / 180, 6);
   });
 
-  it('mirrors left/right FK and IK controls across the character sagittal plane', () => {
+  it('applies the same joint limit during live 3D bone manipulation', () => {
+    const { upper } = armChain();
+    const limited = applyAdditiveJointRotationToBone(upper, 'upperarm_l', { x: Math.PI, y: Math.PI, z: Math.PI });
+    const read = readAdditiveJointRotation(upper, 'upperarm_l');
+    expect(read.x).toBeCloseTo(limited.x, 6);
+    expect(read.y).toBeCloseTo(limited.y, 6);
+    expect(read.z).toBeCloseTo(limited.z, 6);
+    expect(Math.abs(read.x)).toBeLessThan(Math.PI);
+  });
+
+  it('mirrors left/right FK, IK and locked world contacts across the character sagittal plane', () => {
     const rig = emptyRigState();
     rig.fk.upperarm_l = { x: 0.3, y: 0.2, z: -0.4 };
-    rig.ik.leftHand = { enabled: true, locked: false, target: { x: -0.7, y: 1.2, z: -0.2 }, pole: { x: -0.4, y: 1.3, z: -0.6 } };
+    rig.ik.leftHand = { enabled: true, locked: true, target: { x: -0.7, y: 1.2, z: -0.2 }, pole: { x: -0.4, y: 1.3, z: -0.6 }, lockedWorldTarget: { x: -2.1, y: 1.2, z: -0.3 } };
     rig.headLookAt = { enabled: true, target: { x: 1, y: 1.6, z: -2 } };
     const mirrored = mirrorRigState(rig);
     expect(mirrored.fk.upperarm_r).toEqual({ x: 0.3, y: -0.2, z: 0.4 });
     expect(mirrored.ik.rightHand.target).toEqual({ x: 0.7, y: 1.2, z: -0.2 });
+    expect(mirrored.ik.rightHand.lockedWorldTarget).toEqual({ x: 2.1, y: 1.2, z: -0.3 });
     expect(mirrored.headLookAt.target?.x).toBe(-1);
   });
 
@@ -49,12 +70,7 @@ describe('humanoid rig', () => {
 
   it('solves a two-bone IK chain to a reachable target without stretching bones', () => {
     const actor = actorFixture();
-    const root = new THREE.Group();
-    const upper = new THREE.Bone(); upper.name = 'upperarm_l';
-    const lower = new THREE.Bone(); lower.name = 'lowerarm_l'; lower.position.set(0, 1, 0);
-    const hand = new THREE.Bone(); hand.name = 'hand_l'; hand.position.set(0, 1, 0);
-    upper.add(lower); lower.add(hand); root.add(upper);
-    captureNeutralRigBase(root);
+    const { root, upper, lower, hand } = armChain();
     const rig = emptyRigState();
     rig.ik.leftHand = { enabled: true, locked: false, target: { x: 1, y: 1, z: 0 }, pole: { x: 0, y: 0.5, z: 1 } };
     applyRigToCharacter(root, actor, rig);
@@ -63,5 +79,21 @@ describe('humanoid rig', () => {
     expect(end.distanceTo(new THREE.Vector3(1, 1, 0))).toBeLessThan(0.02);
     expect(upper.getWorldPosition(new THREE.Vector3()).distanceTo(lower.getWorldPosition(new THREE.Vector3()))).toBeCloseTo(1, 5);
     expect(lower.getWorldPosition(new THREE.Vector3()).distanceTo(hand.getWorldPosition(new THREE.Vector3()))).toBeCloseTo(1, 5);
+  });
+
+  it('keeps a locked hand at the same world contact when the actor root moves', () => {
+    const actor = actorFixture();
+    const anchor = new THREE.Group();
+    const { root, hand } = armChain();
+    anchor.add(root);
+    const rig = emptyRigState();
+    rig.ik.leftHand = { enabled: true, locked: true, target: { x: 1, y: 1, z: 0 }, pole: { x: 0, y: 0.5, z: 1 }, lockedWorldTarget: { x: 1, y: 1, z: 0 } };
+    applyRigToCharacter(root, actor, rig);
+    anchor.updateWorldMatrix(true, true);
+    expect(hand.getWorldPosition(new THREE.Vector3()).distanceTo(new THREE.Vector3(1, 1, 0))).toBeLessThan(0.02);
+    anchor.position.set(0.35, 0, 0);
+    applyRigToCharacter(root, actor, rig);
+    anchor.updateWorldMatrix(true, true);
+    expect(hand.getWorldPosition(new THREE.Vector3()).distanceTo(new THREE.Vector3(1, 1, 0))).toBeLessThan(0.02);
   });
 });
