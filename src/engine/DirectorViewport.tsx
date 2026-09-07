@@ -11,14 +11,22 @@ import { sampleActorTransform, sampleCamera, sampleLight } from '../utils/animat
 import type { Actor, DirectorLight } from '../domain/model';
 import { humanoidJointIds, rigControlIds, type HumanoidJointId, type RigControlId } from '../domain/humanoidRig';
 import { instantiateDirectorCharacter } from '../characters/characterLoader';
-import { applyActorRigAtTime, controlPosition, jointDrivenByIk, readAdditiveJointRotation, rigControlToLimb, sampleActorRig } from '../characters/rigRuntime';
+import {
+  applyActorRigAtTime,
+  applyAdditiveJointRotationToBone,
+  applyRigToCharacter,
+  controlPosition,
+  jointDrivenByIk,
+  readAdditiveJointRotation,
+  rigControlToLimb,
+  sampleActorRig,
+} from '../characters/rigRuntime';
 import { setActorHeadLookAt, setActorIkPole, setActorIkTarget, setActorJointRotation } from '../store/poseRegistry';
 import { uiZh } from '../i18n/zhCN';
 
 function directorLightColor(light: DirectorLight) {
   const cct = correlatedColorTemperatureToSrgb(light.colorTemperatureK);
-  const color = new THREE.Color(cct.r, cct.g, cct.b).convertSRGBToLinear();
-  return color.multiply(new THREE.Color(light.color));
+  return new THREE.Color(cct.r, cct.g, cct.b).convertSRGBToLinear().multiply(new THREE.Color(light.color));
 }
 
 function buildLightMarker(light: DirectorLight, color: THREE.Color) {
@@ -101,26 +109,37 @@ function installRigMarkers(character: CharacterRuntime, actor: Actor) {
   }
 }
 
-function updateRigMarkers(character: CharacterRuntime, actor: Actor, rigEditVisible: boolean, selectedControl?: RigControlId, selectedJoint?: HumanoidJointId) {
+function updateJointMarkersFromBones(character: CharacterRuntime) {
   if (!character.root) return;
-  const rig = sampleActorRig(actor, useDirectorStore.getState().playhead);
   character.anchor.updateWorldMatrix(true, false);
   character.root.updateWorldMatrix(true, true);
   for (const [joint, marker] of character.jointMarkers) {
     const bone = character.root.getObjectByName(joint);
     if (!bone) continue;
-    const world = bone.getWorldPosition(new THREE.Vector3());
-    marker.position.copy(character.anchor.worldToLocal(world));
+    marker.position.copy(character.anchor.worldToLocal(bone.getWorldPosition(new THREE.Vector3())));
+  }
+}
+
+function updateRigMarkers(character: CharacterRuntime, actor: Actor, rigEditVisible: boolean, selectedControl?: RigControlId, selectedJoint?: HumanoidJointId) {
+  if (!character.root) return;
+  const rig = sampleActorRig(actor, useDirectorStore.getState().playhead);
+  updateJointMarkersFromBones(character);
+  for (const [joint, marker] of character.jointMarkers) {
     marker.visible = rigEditVisible && !jointDrivenByIk(rig, joint);
-    const material = marker.material as THREE.MeshBasicMaterial;
-    material.color.setHex(selectedJoint === joint ? 0xffffff : 0x5cc8ff);
+    (marker.material as THREE.MeshBasicMaterial).color.setHex(selectedJoint === joint ? 0xffffff : 0x5cc8ff);
   }
   for (const [control, marker] of character.controlMarkers) {
     const limb = rigControlToLimb(control);
-    const enabled = control === 'headLookAt' ? rig.headLookAt.enabled : limb ? rig.ik[limb].enabled : false;
-    const locked = limb ? rig.ik[limb].locked : false;
-    const position = controlPosition(actor, rig, control);
-    marker.position.set(position.x, position.y, position.z);
+    const state = limb ? rig.ik[limb] : undefined;
+    const enabled = control === 'headLookAt' ? rig.headLookAt.enabled : state?.enabled ?? false;
+    const locked = state?.locked ?? false;
+    if (state?.locked && state.lockedWorldTarget && !control.endsWith('Pole')) {
+      const world = new THREE.Vector3(state.lockedWorldTarget.x, state.lockedWorldTarget.y, state.lockedWorldTarget.z);
+      marker.position.copy(character.anchor.worldToLocal(world));
+    } else {
+      const position = controlPosition(actor, rig, control);
+      marker.position.set(position.x, position.y, position.z);
+    }
     marker.visible = rigEditVisible && enabled;
     const material = marker.material as THREE.MeshBasicMaterial;
     if (selectedControl === control) material.color.setHex(0xffffff);
@@ -132,7 +151,6 @@ function updateRigMarkers(character: CharacterRuntime, actor: Actor, rigEditVisi
 export function DirectorViewport() {
   const mountRef = useRef<HTMLDivElement>(null);
   const runtime = useRef<Runtime | null>(null);
-  const shotRef = useRef(useDirectorStore.getState().getActiveShot());
   const [viewMode, setViewMode] = useState<'director' | 'shot'>('director');
   const [characterLoad, setCharacterLoad] = useState<CharacterLoadState>({ loaded: 0, total: 0, failed: 0 });
   const viewModeRef = useRef(viewMode);
@@ -161,7 +179,6 @@ export function DirectorViewport() {
     camera: shot.camera.id,
   }), [shot]);
 
-  shotRef.current = shot;
   useEffect(() => { viewModeRef.current = viewMode; }, [viewMode]);
   useEffect(() => { shotAspectRef.current = shot.frameAspect; }, [shot.frameAspect]);
 
@@ -250,6 +267,43 @@ export function DirectorViewport() {
     };
     renderer.domElement.addEventListener('pointerdown', onPointerDown);
 
+    let applyingLiveRig = false;
+    const onTransformPreview = () => {
+      if (!transform.dragging || applyingLiveRig) return;
+      const object = transform.object;
+      if (!object) return;
+      const actorId = object.userData.actorId as string | undefined;
+      if (!actorId) return;
+      const control = object.userData.rigControlId as RigControlId | undefined;
+      const joint = object.userData.rigJointId as HumanoidJointId | undefined;
+      const currentShot = useDirectorStore.getState().getActiveShot();
+      const actor = currentShot.actors.find((item) => item.id === actorId);
+      const character = characters.get(actorId);
+      if (!actor || !character?.root) return;
+      applyingLiveRig = true;
+      try {
+        if (control) {
+          const rig = sampleActorRig(actor, useDirectorStore.getState().playhead);
+          const value = { x: object.position.x, y: object.position.y, z: object.position.z };
+          if (control === 'headLookAt') rig.headLookAt = { enabled: true, target: value };
+          else {
+            const limb = rigControlToLimb(control);
+            if (!limb || rig.ik[limb].locked) return;
+            rig.ik[limb].enabled = true;
+            if (control.endsWith('Pole')) rig.ik[limb].pole = value;
+            else rig.ik[limb].target = value;
+          }
+          applyRigToCharacter(character.root, actor, rig);
+          updateJointMarkersFromBones(character);
+        } else if (joint) {
+          const limited = readAdditiveJointRotation(object, joint);
+          applyAdditiveJointRotationToBone(object, joint, limited);
+          updateJointMarkersFromBones(character);
+        }
+      } finally { applyingLiveRig = false; }
+    };
+    transform.addEventListener('objectChange', onTransformPreview);
+
     const onTransformEnd = () => {
       const object = transform.object;
       if (!object || useDirectorStore.getState().getActiveShot().status === 'APPROVED') return;
@@ -289,7 +343,7 @@ export function DirectorViewport() {
     animate();
     runtime.current = { scene, renderer, editorCamera, shotCamera, controls, transform, content, actorObjects, characters, lightObjects, lights, raf };
     return () => {
-      cancelAnimationFrame(raf); ro.disconnect(); renderer.domElement.removeEventListener('pointerdown', onPointerDown); transform.removeEventListener('mouseUp', onTransformEnd); transform.detach(); transform.dispose(); controls.dispose(); disposeSceneContent(content); floor.geometry.dispose(); (floor.material as THREE.Material).dispose(); renderer.dispose(); if (host.contains(renderer.domElement)) host.removeChild(renderer.domElement); runtime.current = null;
+      cancelAnimationFrame(raf); ro.disconnect(); renderer.domElement.removeEventListener('pointerdown', onPointerDown); transform.removeEventListener('objectChange', onTransformPreview); transform.removeEventListener('mouseUp', onTransformEnd); transform.detach(); transform.dispose(); controls.dispose(); disposeSceneContent(content); floor.geometry.dispose(); (floor.material as THREE.Material).dispose(); renderer.dispose(); if (host.contains(renderer.domElement)) host.removeChild(renderer.domElement); runtime.current = null;
     };
   }, [selectObject, selectRigControl, selectRigJoint]);
 
@@ -361,7 +415,8 @@ export function DirectorViewport() {
   }, [characterLoad.loaded, playhead, poseActorId, poseEnabled, selectedControl, selectedIsLight, selectedJoint, selectedObjectId, shot, shotEditable, transformMode, viewMode]);
 
   const characterStatus = characterLoad.failed ? `开源角色：${characterLoad.loaded}/${characterLoad.total} 已加载 · ${characterLoad.failed} 个失败` : characterLoad.loaded === characterLoad.total && characterLoad.total > 0 ? `${uiZh.characterReady} · ${characterLoad.loaded}/${characterLoad.total} · Quaternius CC0` : `${uiZh.loadingCharacter} ${characterLoad.loaded}/${characterLoad.total}`;
-  return <div className="viewport-shell">
+  const rigSelection = selectedControl ? `控制器:${selectedControl}` : selectedJoint ? `关节:${selectedJoint}` : '无';
+  return <div className="viewport-shell" data-pose-mode={poseEnabled ? 'active' : 'inactive'} data-rig-selection={rigSelection}>
     <div className="viewport-toolbar">
       <span className="chip">3D 场面调度 / 预演</span>
       <button className={viewMode === 'director' ? 'active' : ''} onClick={() => setViewMode('director')}>导演视图</button>
