@@ -18,9 +18,10 @@
     "audit:collab": "node scripts/collaboration-smoke.mjs && node scripts/collaboration-server-smoke.mjs",
     "audit:pipeline": "node scripts/pipeline-smoke.mjs",
     "audit:ai": "node scripts/ai-smoke.mjs",
+    "audit:characters": "node scripts/character-rig-smoke.mjs",
     "audit:localization": "node scripts/localization-smoke.mjs",
     "audit:deps": "npm audit --audit-level=high --omit=dev",
-    "check": "npm run audit:static && npm run audit:windows && npm run audit:collab && npm run audit:pipeline && npm run audit:ai && npm run audit:localization && npm run test && npm run build",
+    "check": "npm run characters:install && npm run audit:static && npm run audit:windows && npm run audit:collab && npm run audit:pipeline && npm run audit:ai && npm run audit:characters && npm run audit:localization && npm run test && npm run build",
     "collab:server": "node server/collab-server.mjs",
     "collab:token": "node scripts/issue-collab-token.mjs"
   },
