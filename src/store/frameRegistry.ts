@@ -12,15 +12,23 @@ export const frameAspectPresets = [
   { label: '9:16 · Vertical', value: 9 / 16 },
 ] as const;
 
-export function setActiveShotFrameAspect(value: number): void {
+function commitShotMetadata(mutator: (shot: ReturnType<typeof useDirectorStore.getState>['project']['sequences'][number]['shots'][number]) => void): void {
   const state = useDirectorStore.getState();
-  if (state.getActiveShot().status === 'APPROVED') throw new Error('Approved Shot is immutable. Reopen it as a new WIP before changing frame aspect.');
+  if (state.getActiveShot().status === 'APPROVED') throw new Error('Approved Shot is immutable. Reopen it as a new WIP before changing camera or frame metadata.');
   const history = recordProjectHistory(state.project, { undoStack: state.undoStack, redoStack: state.redoStack });
   const project = structuredClone(state.project);
   const shot = project.sequences.find((sequence) => sequence.id === state.activeSequenceId)?.shots.find((item) => item.id === state.activeShotId);
   if (!shot) throw new Error('Active Shot not found.');
-  shot.frameAspect = Math.min(4, Math.max(0.25, value));
+  mutator(shot);
   project.updatedAt = new Date().toISOString();
   localStorage.setItem(STORAGE_KEY, JSON.stringify(project));
   useDirectorStore.setState({ project, ...history });
+}
+
+export function setActiveShotFrameAspect(value: number): void {
+  commitShotMetadata((shot) => { shot.frameAspect = Math.min(4, Math.max(0.25, value)); });
+}
+
+export function setActiveShotSensorWidthMm(value: number): void {
+  commitShotMetadata((shot) => { shot.camera.sensorWidthMm = Math.min(200, Math.max(1, value)); });
 }
