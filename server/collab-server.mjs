@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { WebSocketServer, WebSocket } from 'ws';
 import { verifyCollaborationToken } from './auth.mjs';
 import { canInitializeProjectRoom, effectiveProjectRole, hasProjectPermission } from './authorization.mjs';
+import { authorizeProjectMutation } from './project-policy.mjs';
 
 const PORT = Number(process.env.PDS_COLLAB_PORT ?? 8787);
 const HOST = process.env.PDS_COLLAB_HOST ?? '127.0.0.1';
@@ -156,15 +157,19 @@ wss.on('connection', (ws) => {
 
     if (message.type === 'mutate') {
       const mutationId = String(message.mutationId ?? 'unknown');
-      if (!has(room, identity, 'edit')) { send(ws, { type: 'conflict', mutationId, reason: 'permission-denied', expectedRevision: room.revision, receivedRevision: message.baseRevision, project: room.project }); return; }
       if (Number(message.baseRevision) !== room.revision) { send(ws, { type: 'conflict', mutationId, reason: 'stale-revision', expectedRevision: room.revision, receivedRevision: message.baseRevision, project: room.project }); return; }
-      if (!validOwnedLock(room, identity, Array.isArray(message.lockTokens) ? message.lockTokens : [])) { send(ws, { type: 'conflict', mutationId, reason: 'lock-required', expectedRevision: room.revision, receivedRevision: message.baseRevision, project: room.project }); return; }
       if (!validProjectEnvelope(message.project, identity.projectId)) { send(ws, { type: 'error', code: 'invalid-project-envelope' }); return; }
+      if (!room.project) { send(ws, { type: 'error', code: 'room-not-initialized' }); return; }
+      const role = effectiveRole(room, identity);
+      const policy = authorizeProjectMutation(room.project, message.project, identity, role);
+      if (!policy.ok) { send(ws, { type: 'conflict', mutationId, reason: policy.reason ?? 'permission-denied', expectedRevision: room.revision, receivedRevision: message.baseRevision, project: room.project }); return; }
+      if (policy.requiresLock && !validOwnedLock(room, identity, Array.isArray(message.lockTokens) ? message.lockTokens : [])) { send(ws, { type: 'conflict', mutationId, reason: 'lock-required', expectedRevision: room.revision, receivedRevision: message.baseRevision, project: room.project }); return; }
       room.revision += 1;
       message.project.collaboration = { ...(message.project.collaboration ?? {}), revision: room.revision };
       room.project = message.project;
       const accepted = { type: 'accepted', mutationId, revision: room.revision, project: room.project };
       broadcast(room, accepted);
+      send(ws, accepted);
       return;
     }
   });
