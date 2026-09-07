@@ -1,0 +1,5 @@
+.workspace.assets-mode{grid-template-columns:230px minmax(0,1fr)}
+.asset-stage{height:100%;overflow:auto;background:#101419}
+.asset-stage .asset-library{max-width:980px;margin:0 auto;padding:20px!important}
+@media(max-width:1100px){.workspace.assets-mode{grid-template-columns:190px minmax(0,1fr)}}
+@media(max-width:780px){.workspace.assets-mode{grid-template-columns:1fr}.asset-stage{padding-bottom:48px}.asset-stage .asset-library{padding:14px!important}}
