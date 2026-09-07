@@ -1,3 +1,4 @@
+import type { Shot } from '../domain/model';
 import { recordProjectHistory } from './projectHistory';
 import { useDirectorStore } from './directorStore';
 
@@ -12,7 +13,7 @@ export const frameAspectPresets = [
   { label: '9:16 · Vertical', value: 9 / 16 },
 ] as const;
 
-function commitShotMetadata(mutator: (shot: ReturnType<typeof useDirectorStore.getState>['project']['sequences'][number]['shots'][number]) => void): void {
+function commitShotMetadata(mutator: (shot: Shot) => void): void {
   const state = useDirectorStore.getState();
   if (state.getActiveShot().status === 'APPROVED') throw new Error('Approved Shot is immutable. Reopen it as a new WIP before changing camera or frame metadata.');
   const history = recordProjectHistory(state.project, { undoStack: state.undoStack, redoStack: state.redoStack });
