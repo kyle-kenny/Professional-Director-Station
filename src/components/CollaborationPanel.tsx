@@ -27,21 +27,26 @@ export function CollaborationPanel() {
   const connect = () => {
     setConflict('');
     lastSyncedStamp.current = project.updatedAt;
-    session.connectAuthenticated({
-      url: url.trim(), token: token.trim(), project,
-      callbacks: {
-        onStatus: setStatus,
-        onIdentity: (next) => { setIdentity(next); setSessionIdentity(next); },
-        onPresence: setPresence,
-        onLocks: setLocks,
-        onConflict: (item) => setConflict(`${item.reason}: local r${item.receivedRevision} / server r${item.expectedRevision}. Local rejected state was rolled back.`),
-        onProject: (remote, revision) => {
-          remote.collaboration.revision = revision;
-          lastSyncedStamp.current = remote.updatedAt;
-          applyAuthoritativeProject(remote);
+    try {
+      session.connectAuthenticated({
+        url: url.trim(), token: token.trim(), project,
+        callbacks: {
+          onStatus: setStatus,
+          onIdentity: (next) => { setIdentity(next); setSessionIdentity(next); },
+          onPresence: setPresence,
+          onLocks: setLocks,
+          onConflict: (item) => setConflict(`${item.reason}: local r${item.receivedRevision} / server r${item.expectedRevision}. Local rejected state was rolled back.`),
+          onProject: (remote, revision) => {
+            remote.collaboration.revision = revision;
+            lastSyncedStamp.current = remote.updatedAt;
+            applyAuthoritativeProject(remote);
+          },
         },
-      },
-    });
+      });
+    } catch (error) {
+      setStatus('error');
+      setConflict(error instanceof Error ? error.message : 'Collaboration connection validation failed.');
+    }
   };
 
   useEffect(() => {
@@ -81,7 +86,7 @@ export function CollaborationPanel() {
       {status === 'connected' ? <button className="wide compact" onClick={() => session.disconnect()}>Disconnect</button> : <button className="wide compact" disabled={!token.trim()} onClick={connect}>Connect</button>}
     </div>
     <div className="collab-status-row"><span className={`connection-state ${status}`}>{status}</span><strong>{identity.displayName}</strong><span>{identity.role}</span><span>{identity.department}</span><span>revision {project.collaboration.revision}</span></div>
-    <div className="meta">服务端 token 决定 project scope 与身份；项目成员表决定实际角色权限。当前 Shot 使用 45 秒租约锁，每 20 秒续租。</div>
+    <div className="meta">签名 token 是 project scope 与权限上限；成员表只能降权，不能把 token 提升成更高角色。远程连接必须使用 wss://，本机开发允许 ws://127.0.0.1 / localhost。当前 Shot 使用 45 秒租约锁，每 20 秒续租。</div>
     {ownLock && <div className="collab-ok">SHOT LOCK · owned · expires {new Date(ownLock.expiresAt).toLocaleTimeString()}</div>}
     {foreignLock && <div className="collab-conflict">SHOT LOCKED BY {foreignLock.ownerName}</div>}
     {conflict && <div className="collab-conflict">{conflict}</div>}
