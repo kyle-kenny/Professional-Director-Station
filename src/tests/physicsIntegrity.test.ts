@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { actorPresetList, createActorFromPreset } from '../domain/actorLibrary';
-import { buildActorMotionPath, motionPresetList } from '../domain/actorMotions';
+import { createActorMotionPath, motionPresetList } from '../domain/actorMotions';
 import { lightingPresets } from '../domain/presets';
 import { correlatedColorTemperatureToSrgb } from '../utils/lightColor';
 import { focalLengthToVerticalFovDeg, projectWorldToFrame } from '../utils/math';
@@ -41,7 +41,7 @@ describe('release physics integrity', () => {
       const actor = createActorFromPreset(preset.id, 1, 0, 0);
       actor.transform.position.y = 0.25;
       for (const motion of motionPresetList) {
-        const keys = buildActorMotionPath(actor, motion.id, 6);
+        const keys = createActorMotionPath(actor, 6, motion.id);
         expect(keys.length).toBeGreaterThan(1);
         expect(keys.every((key) => Math.abs(key.position.y - 0.25) < 1e-9)).toBe(true);
       }
