@@ -18,14 +18,36 @@ export type ReferenceExportResult = {
 
 export { buildReferenceExportPlan } from './referenceExportPlan';
 
+function even(value: number): number {
+  const rounded = Math.max(2, Math.round(value));
+  return rounded % 2 === 0 ? rounded : rounded + 1;
+}
+
+export function resolveReferenceExportSize(shot: Shot, options: ReferenceExportOptions = {}): { width: number; height: number } {
+  if (options.width !== undefined && options.height !== undefined) {
+    const width = even(Math.max(320, options.width));
+    const height = even(Math.max(180, options.height));
+    const actual = width / height;
+    if (Math.abs(actual - shot.frameAspect) > 0.01) throw new Error(`MP4 输出宽高比 ${actual.toFixed(3)} 与 Shot 画幅 ${shot.frameAspect.toFixed(3)} 不一致。`);
+    return { width, height };
+  }
+  if (options.width !== undefined) {
+    const width = even(Math.max(320, options.width));
+    return { width, height: even(width / shot.frameAspect) };
+  }
+  if (options.height !== undefined) {
+    const height = even(Math.max(180, options.height));
+    return { width: even(height * shot.frameAspect), height };
+  }
+  const width = 1280;
+  return { width, height: even(width / shot.frameAspect) };
+}
+
 export async function exportShotReferenceMp4(shot: Shot, options: ReferenceExportOptions = {}): Promise<ReferenceExportResult> {
   if (typeof document === 'undefined') throw new Error('MP4 参考导出需要浏览器 Canvas 环境。');
   if (typeof VideoEncoder === 'undefined') throw new Error('当前浏览器没有 WebCodecs VideoEncoder，无法输出 H.264 MP4。');
 
-  const width = Math.max(320, Math.round(options.width ?? 1280));
-  const height = Math.max(180, Math.round(options.height ?? 720));
-  if (width % 2 || height % 2) throw new Error('MP4 输出尺寸必须为偶数。');
-
+  const { width, height } = resolveReferenceExportSize(shot, options);
   const canvas = document.createElement('canvas');
   canvas.width = width;
   canvas.height = height;
