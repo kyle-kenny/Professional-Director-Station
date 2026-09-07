@@ -16,14 +16,14 @@ export const aiModelProfileSchema = z.object({
   enabled: z.boolean().default(true),
 }).superRefine((profile, ctx) => {
   if (profile.provider === 'pds-http' && !profile.endpoint) {
-    ctx.addIssue({ code: 'custom', path: ['endpoint'], message: 'pds-http profiles require an endpoint.' });
+    ctx.addIssue({ code: 'custom', path: ['endpoint'], message: 'PDS-HTTP 模型配置必须提供端点地址。' });
     return;
   }
   if (!profile.endpoint) return;
   const url = new URL(profile.endpoint);
   const local = ['localhost', '127.0.0.1', '::1'].includes(url.hostname);
   if (url.protocol !== 'https:' && !(local && url.protocol === 'http:')) {
-    ctx.addIssue({ code: 'custom', path: ['endpoint'], message: 'AI endpoints must use HTTPS except localhost development endpoints.' });
+    ctx.addIssue({ code: 'custom', path: ['endpoint'], message: 'AI 远程端点必须使用 HTTPS；仅本机开发允许 HTTP。' });
   }
 });
 export type AiModelProfile = z.infer<typeof aiModelProfileSchema>;
@@ -79,7 +79,7 @@ export type AiGeneratedMedia = z.infer<typeof aiGeneratedMediaSchema>;
 
 export const localStructuralProfile: AiModelProfile = {
   id: 'local-structural-v1',
-  label: 'PDS Local Structural Storyboard',
+  label: 'PDS 本地结构故事板',
   provider: 'local-structural',
   modelId: 'pds-structural-svg',
   revision: '1',
