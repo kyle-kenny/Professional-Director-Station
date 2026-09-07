@@ -1,9 +1,9 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
-import type { Actor, Vec3 } from '../domain/model';
-import { resolvePoseDefinition } from '../domain/poseLibrary';
+import type { Actor } from '../domain/model';
 import { characterAgeTreatment, characterModelUrl, resolveOpenCharacter, type OpenCharacterDescriptor } from './characterCatalog';
+import { captureNeutralRigBase } from './rigRuntime';
 
 const loader = new GLTFLoader();
 const templateCache = new Map<string, Promise<THREE.Group>>();
@@ -15,15 +15,6 @@ function loadTemplate(url: string) {
     templateCache.set(url, request);
   }
   return request;
-}
-
-function additiveBoneRotation(root: THREE.Object3D, boneName: string, rotation?: Vec3) {
-  if (!rotation) return;
-  const bone = root.getObjectByName(boneName);
-  if (!bone) return;
-  const base = bone.quaternion.clone();
-  const additive = new THREE.Quaternion().setFromEuler(new THREE.Euler(rotation.x, rotation.y, rotation.z, 'XYZ'));
-  bone.quaternion.copy(base.multiply(additive));
 }
 
 function cloneInstanceMaterials(root: THREE.Object3D, actorId: string) {
@@ -50,17 +41,6 @@ function normalizeToActorHeight(model: THREE.Group, targetHeightM: number) {
   model.position.y = -box.min.y * scale;
 }
 
-function applyDirectorPose(model: THREE.Group, actor: Actor) {
-  const pose = resolvePoseDefinition(actor.pose);
-  additiveBoneRotation(model, 'spine_02', pose.jointRotations.torso);
-  additiveBoneRotation(model, 'neck_01', pose.jointRotations.head);
-  additiveBoneRotation(model, 'upperarm_l', pose.jointRotations.leftArm);
-  additiveBoneRotation(model, 'upperarm_r', pose.jointRotations.rightArm);
-  additiveBoneRotation(model, 'thigh_l', pose.jointRotations.leftLeg);
-  additiveBoneRotation(model, 'thigh_r', pose.jointRotations.rightLeg);
-  return pose.rootOffsetY;
-}
-
 function applyAgeTreatment(model: THREE.Group, actor: Actor) {
   const treatment = characterAgeTreatment(actor);
   if (treatment.posturePitchRad) {
@@ -85,6 +65,10 @@ export type DirectorCharacterInstance = {
   descriptor: OpenCharacterDescriptor;
 };
 
+/**
+ * Instantiate a real skinned CC0 character in its neutral/age-treated bind posture.
+ * All director FK/IK posing is applied afterwards by rigRuntime so pose changes do not reload geometry.
+ */
 export async function instantiateDirectorCharacter(actor: Actor): Promise<DirectorCharacterInstance> {
   const descriptor = resolveOpenCharacter(actor);
   const template = await loadTemplate(characterModelUrl(descriptor));
@@ -92,18 +76,14 @@ export async function instantiateDirectorCharacter(actor: Actor): Promise<Direct
   cloneInstanceMaterials(model, actor.id);
   normalizeToActorHeight(model, actor.demographics.heightM);
   applyAgeTreatment(model, actor);
-  const rootOffset = applyDirectorPose(model, actor);
+  captureNeutralRigBase(model);
 
   const root = new THREE.Group();
   root.name = actor.name;
   root.userData.actorId = actor.id;
   root.userData.characterSource = 'quaternius-cc0';
   root.userData.characterVariant = descriptor.id;
-
-  const posture = new THREE.Group();
-  posture.position.y = rootOffset;
-  posture.add(model);
-  root.add(posture);
+  root.add(model);
   return { root, descriptor };
 }
 
