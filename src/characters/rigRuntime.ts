@@ -83,6 +83,7 @@ function interpolateRig(from: HumanoidRigState, to: HumanoidRigState, t: number)
       locked: t < 0.5 ? a.locked : b.locked,
       target: a.target && b.target ? lerpVec(a.target, b.target, t) : structuredClone(a.target ?? b.target),
       pole: a.pole && b.pole ? lerpVec(a.pole, b.pole, t) : structuredClone(a.pole ?? b.pole),
+      lockedWorldTarget: a.lockedWorldTarget && b.lockedWorldTarget ? lerpVec(a.lockedWorldTarget, b.lockedWorldTarget, t) : structuredClone(a.lockedWorldTarget ?? b.lockedWorldTarget),
     };
   }
   result.headLookAt = {
@@ -155,15 +156,21 @@ function resetRigBones(root: THREE.Object3D) {
   }
 }
 
+export function applyAdditiveJointRotationToBone(bone: THREE.Object3D, joint: HumanoidJointId, rotation: RigVec3): RigVec3 {
+  const limited = clampJointRotation(joint, rotation);
+  const additive = new THREE.Quaternion().setFromEuler(new THREE.Euler(limited.x, limited.y, limited.z, 'XYZ'));
+  bone.quaternion.copy(baseQuaternion(bone).multiply(additive)).normalize();
+  bone.updateWorldMatrix(false, true);
+  return limited;
+}
+
 function applyFk(root: THREE.Object3D, rig: HumanoidRigState) {
   for (const joint of humanoidJointIds) {
     const rotation = rig.fk[joint];
     if (!rotation) continue;
     const bone = root.getObjectByName(joint);
     if (!bone) continue;
-    const limited = clampJointRotation(joint, rotation);
-    const additive = new THREE.Quaternion().setFromEuler(new THREE.Euler(limited.x, limited.y, limited.z, 'XYZ'));
-    bone.quaternion.copy(baseQuaternion(bone).multiply(additive));
+    applyAdditiveJointRotationToBone(bone, joint, rotation);
   }
 }
 
@@ -183,7 +190,7 @@ function aimBoneAt(bone: THREE.Object3D, child: THREE.Object3D, targetWorld: THR
   bone.updateWorldMatrix(false, true);
 }
 
-function twoBoneIk(root: THREE.Object3D, upperName: string, lowerName: string, endName: string, target: RigVec3, pole: RigVec3) {
+function twoBoneIk(root: THREE.Object3D, upperName: string, lowerName: string, endName: string, target: RigVec3, pole: RigVec3, lockedWorldTarget?: RigVec3) {
   const upper = root.getObjectByName(upperName);
   const lower = root.getObjectByName(lowerName);
   const end = root.getObjectByName(endName);
@@ -194,7 +201,9 @@ function twoBoneIk(root: THREE.Object3D, upperName: string, lowerName: string, e
   const wrist = end.getWorldPosition(new THREE.Vector3());
   const l1 = Math.max(1e-4, shoulder.distanceTo(elbow));
   const l2 = Math.max(1e-4, elbow.distanceTo(wrist));
-  const targetWorld = root.localToWorld(new THREE.Vector3(target.x, target.y, target.z));
+  const targetWorld = lockedWorldTarget
+    ? new THREE.Vector3(lockedWorldTarget.x, lockedWorldTarget.y, lockedWorldTarget.z)
+    : root.localToWorld(new THREE.Vector3(target.x, target.y, target.z));
   const poleWorld = root.localToWorld(new THREE.Vector3(pole.x, pole.y, pole.z));
   const toTarget = targetWorld.clone().sub(shoulder);
   const rawDistance = Math.max(1e-6, toTarget.length());
@@ -249,7 +258,7 @@ export function applyRigToCharacter(root: THREE.Group, actor: Actor, rig: Humano
     const state = rig.ik[id];
     if (!state.enabled) continue;
     const defaults = defaultIkPlacement(actor.demographics.heightM, id);
-    twoBoneIk(root, upper, lower, end, state.target ?? defaults.target!, state.pole ?? defaults.pole!);
+    twoBoneIk(root, upper, lower, end, state.target ?? defaults.target!, state.pole ?? defaults.pole!, state.locked ? state.lockedWorldTarget : undefined);
   }
   applyHeadLookAt(root, actor, rig);
   root.updateWorldMatrix(true, true);
