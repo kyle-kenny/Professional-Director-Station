@@ -5,7 +5,7 @@ const root = process.cwd();
 const required = [
   'src/domain/model.ts','src/domain/defaultProject.ts','src/domain/actorLibrary.ts','src/domain/poseLibrary.ts','src/domain/actorMotions.ts','src/domain/lensPresets.ts','src/domain/skeletonContract.ts','src/domain/humanoidRig.ts','src/domain/collaboration.ts',
   'src/characters/characterCatalog.ts','src/characters/characterLoader.ts','src/characters/rigRuntime.ts',
-  'src/engine/DirectorViewport.tsx','src/components/PoseInspectorPanel.tsx','src/components/FloorPlanCanvas.tsx','src/components/DirectorFrameCanvas.tsx','src/components/TimelinePanel.tsx','src/components/WaveformStrip.tsx','src/components/AssetLibraryPanel.tsx','src/components/CollaborationPanel.tsx','src/components/ReviewWorkspace.tsx',
+  'src/engine/DirectorViewport.tsx','src/components/PoseEditorPanel.tsx','src/components/FloorPlanCanvas.tsx','src/components/DirectorFrameCanvas.tsx','src/components/TimelinePanel.tsx','src/components/WaveformStrip.tsx','src/components/AssetLibraryPanel.tsx','src/components/CollaborationPanel.tsx','src/components/ReviewWorkspace.tsx',
   'src/rendering/directorFrameRenderer.ts','src/editorial/timelineEngine.ts','src/editorial/otio.ts','src/editorial/referenceExport.ts','src/editorial/referenceExportPlan.ts',
   'src/audio/waveform.ts','src/audio/audioImport.ts','src/audio/audioTransport.ts','src/storage/audioMediaStore.ts','src/utils/assetIngest.ts','src/storage/assetBinaryStore.ts','src/store/assetRegistry.ts','src/store/poseRegistry.ts','src/store/poseUiStore.ts',
   'src/collab/collaboration.ts','src/collab/authorization.ts','src/collab/protocol.ts','src/collab/reviewWorkflow.ts','src/collab/sessionIdentity.ts','src/store/reviewRegistry.ts','src/utils/sha256.ts','src/i18n/zhCN.ts',
@@ -35,8 +35,8 @@ const rigRuntime = read('src/characters/rigRuntime.ts');
 must(rigRuntime,['sampleActorRig','twoBoneIk','applyRigToCharacter','applyHeadLookAt','maxReach','minReach','jointDrivenByIk'],'rig runtime contract');
 const poseRegistry = read('src/store/poseRegistry.ts');
 must(poseRegistry,['setActorJointRotation','setActorIkEnabled','setActorIkLocked','setActorIkTarget','setActorIkPole','setActorHeadLookAt','mirrorActorPose','saveCustomPose','addActorPoseKeyframe','removeActorPoseKeyframe'],'pose persistence contract');
-const posePanel = read('src/components/PoseInspectorPanel.tsx');
-must(posePanel,['人物调姿','FK','IK','左右镜像','自定义姿势','关键帧'],'pose UI contract');
+const posePanel = read('src/components/PoseEditorPanel.tsx');
+must(posePanel,['人物骨骼调姿','FK 单关节','手脚 IK / 肘膝 Pole','左右镜像','自定义姿势库','姿势关键帧'],'pose UI contract');
 
 const assetIngest = read('src/utils/assetIngest.ts');
 must(assetIngest,['glb','fbx','fbx-unit-required','MAX_ASSET_INGEST_BYTES','buildNormalizedAssetRef','contentHashSha256',"source: 'import'"],'asset ingest contract');
