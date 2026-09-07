@@ -14,14 +14,14 @@ export function effectiveProjectRole(tokenRole, memberRole) {
   return roleRank[memberRole] < roleRank[tokenRole] ? memberRole : tokenRole;
 }
 
-export function hasProjectPermission(tokenRole, memberRole, permission) {
-  return rolePermissions[effectiveProjectRole(tokenRole, memberRole)]?.has(permission) ?? false;
-}
-
 export function hasRolePermission(role, permission) {
   return rolePermissions[role]?.has(permission) ?? false;
 }
 
+export function hasProjectPermission(tokenRole, memberRole, permission) {
+  return hasRolePermission(effectiveProjectRole(tokenRole, memberRole), permission);
+}
+
 export function canInitializeProjectRoom(tokenRole) {
-  return rolePermissions[tokenRole]?.has('edit') ?? false;
+  return tokenRole === 'owner';
 }
