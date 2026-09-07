@@ -9,11 +9,13 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:visual": "node scripts/visual-smoke.mjs",
     "audit:static": "node scripts/quality-gate.mjs",
     "audit:windows": "node scripts/windows-smoke.mjs",
     "audit:collab": "node scripts/collaboration-smoke.mjs",
     "audit:pipeline": "node scripts/pipeline-smoke.mjs",
     "audit:ai": "node scripts/ai-smoke.mjs",
+    "audit:deps": "npm audit --audit-level=high --omit=dev",
     "check": "npm run audit:static && npm run audit:windows && npm run audit:collab && npm run audit:pipeline && npm run audit:ai && npm run test && npm run build",
     "collab:server": "node server/collab-server.mjs",
     "collab:token": "node scripts/issue-collab-token.mjs"
@@ -34,6 +36,7 @@
     "@types/react-dom": "^19.2.7",
     "@types/three": "^0.185.4",
     "@vitejs/plugin-react": "^6.1.1",
+    "playwright": "1.63.0",
     "typescript": "~7.0.2",
     "vite": "^8.2.2",
     "vitest": "^5.0.0"
