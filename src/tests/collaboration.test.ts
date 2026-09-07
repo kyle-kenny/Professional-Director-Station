@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { can } from '../collab/authorization';
 import { acceptRevision, canAcquireLock, hasValidLockToken, pruneExpiredLocks, type CollaborationLock } from '../collab/protocol';
-import { reconnectDelayMs } from '../collab/collaboration';
+import { assertSecureCollaborationUrl, reconnectDelayMs } from '../collab/collaboration';
 
 const lock = (overrides: Partial<CollaborationLock> = {}): CollaborationLock => ({
   token: 'token-1', scope: 'shot', targetId: 'shot-1', ownerId: 'editor-a', ownerName: 'Editor A', expiresAt: 10_000, ...overrides,
@@ -30,6 +30,13 @@ describe('Gate 3 authorization and concurrency protocol', () => {
     expect(hasValidLockToken(locks, 'token-1', 'editor-a', 5_000)).toBe(true);
     expect(hasValidLockToken(locks, 'token-1', 'editor-b', 5_000)).toBe(false);
     expect(pruneExpiredLocks(locks, 10_001)).toEqual([]);
+  });
+
+  it('requires encrypted transport for non-local collaboration URLs', () => {
+    expect(assertSecureCollaborationUrl('ws://127.0.0.1:8787')).toContain('ws://127.0.0.1:8787');
+    expect(assertSecureCollaborationUrl('wss://studio.example/pds')).toBe('wss://studio.example/pds');
+    expect(() => assertSecureCollaborationUrl('ws://studio.example/pds')).toThrow(/requires wss/);
+    expect(() => assertSecureCollaborationUrl('https://studio.example/pds')).toThrow(/ws:\/\/ or wss:\/\//);
   });
 
   it('backs off reconnects with a hard upper bound', () => {
