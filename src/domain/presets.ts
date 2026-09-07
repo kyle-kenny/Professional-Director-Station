@@ -3,7 +3,7 @@ import type { DirectorLight } from './model';
 export type LightingPresetId = 'neutral' | 'noon' | 'overcast' | 'golden-hour' | 'moonlight' | 'window-drama' | 'horror' | 'interrogation';
 
 const L = (id: string, name: string, type: DirectorLight['type'], x: number, y: number, z: number, intensity: number, kelvin: number, color: string): DirectorLight => ({
-  id, name, type, position: { x, y, z }, target: { x: 0, y: 1.2, z: 0 }, intensity, colorTemperatureK: kelvin, color, castShadow: type !== 'ambient', path: [],
+  id, name, type, position: { x, y, z }, target: { x: 0, y: 1.2, z: 0 }, intensity, colorTemperatureK: kelvin, color, castShadow: type === 'directional' || type === 'point' || type === 'spot', path: [],
 });
 
 export const lightingPresets: Record<LightingPresetId, { label: string; description: string; lights: DirectorLight[] }> = {
