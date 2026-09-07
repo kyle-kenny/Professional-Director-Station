@@ -5,7 +5,7 @@ import { createPipelinePackageManifest, createDccAdapterManifest } from '../pipe
 import { colorPipelineFingerprint, createColorPipelineManifest, validateColorPipeline } from '../pipeline/color';
 import { collectMaterialAssignments, materialAssignmentsToMtlx, parsePdsMaterialX } from '../pipeline/materialx';
 import { planMediaProxy } from '../pipeline/mediaProxy';
-import { parsePdsUsda, shotToUsda, validatePdsUsda } from '../pipeline/usd';
+import { cameraTransformToUsdMatrix, millimetersToUsdCameraUnits, parsePdsUsda, shotToUsda, validatePdsUsda } from '../pipeline/usd';
 import { MemoryStorageProvider } from '../storage/storageProvider';
 
 describe('Gate 4 pipeline interoperability', () => {
@@ -22,6 +22,39 @@ describe('Gate 4 pipeline interoperability', () => {
     expect(parsed.shot.id).toBe(shot.id);
     expect(parsed.shot.camera.focalLengthMm).toBe(shot.camera.focalLengthMm);
     expect(parsed.shot.actors.map((actor) => actor.id)).toEqual(shot.actors.map((actor) => actor.id));
+  });
+
+  it('exports physical camera units and orientation correctly on a meter-based USD stage', () => {
+    const project = createDefaultProject();
+    const shot = project.sequences[0].shots[0];
+    expect(millimetersToUsdCameraUnits(50, 1)).toBeCloseTo(0.5, 8);
+    expect(millimetersToUsdCameraUnits(36, 1)).toBeCloseTo(0.36, 8);
+    const usda = shotToUsda(project, shot);
+    expect(usda).toContain('float focalLength = 0.5');
+    expect(usda).toContain('float horizontalAperture = 0.36');
+    expect(usda).toContain('float verticalAperture = 0.2025');
+    expect(usda).toContain(`float focusDistance = ${shot.camera.focusDistanceM}`);
+    expect(usda).toContain(`float fStop = ${shot.camera.aperture}`);
+    const matrix = cameraTransformToUsdMatrix(shot.camera.position, shot.camera.target);
+    expect(matrix).toContain(`(${shot.camera.position.x}, ${shot.camera.position.y}, ${shot.camera.position.z}, 1)`);
+    expect(matrix).not.toBe('((1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, 0, 0, 1))');
+    expect(usda).toContain(`matrix4d xformOp:transform = ${matrix}`);
+  });
+
+  it('exports actor camera and light animation samples instead of only static handoff values', () => {
+    const project = createDefaultProject();
+    const shot = project.sequences[0].shots[0];
+    shot.actors[0].path = [{ time: 1, position: { x: -0.5, y: 0, z: -1 }, rotation: { x: 0, y: 0.5, z: 0 }, easing: 'linear' }];
+    shot.camera.path = [{ time: 1, position: { x: 1, y: 1.6, z: 5 }, target: { x: 0, y: 1.4, z: 0 }, focalLengthMm: 85, easing: 'linear' }];
+    shot.lights[1].path = [{ time: 1, position: { x: 3, y: 6, z: 2 }, target: { x: 0, y: 1.2, z: 0 }, intensity: 3, colorTemperatureK: 5000, easing: 'linear' }];
+    const usda = shotToUsda(project, shot);
+    expect(usda).toContain('double3 xformOp:translate.timeSamples');
+    expect(usda).toContain('double3 xformOp:rotateXYZ.timeSamples');
+    expect(usda).toContain('matrix4d xformOp:transform.timeSamples');
+    expect(usda).toContain('float focalLength.timeSamples');
+    expect(usda).toContain('custom float pds:intensity.timeSamples');
+    expect(usda).toContain('custom float pds:colorTemperatureK.timeSamples');
+    expect(usda).toContain(`${shot.fps}: 0.85`);
   });
 
   it('round-trips MaterialX assignment identity for project assets', () => {
