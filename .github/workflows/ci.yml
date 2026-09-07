@@ -27,6 +27,8 @@ jobs:
   browser-audit:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      PDS_ALLOW_INSECURE_LOCAL_AUTH: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -39,9 +41,6 @@ jobs:
       - run: npm run audit:deps
       - run: npx playwright install --with-deps chromium
       - run: npm run check
-      - name: Configure local audit authentication
-        shell: bash
-        run: echo "PDS_AUTH_SECRET=$(node -e \"process.stdout.write('pds-ci-' + 'x'.repeat(40))\")" >> "$GITHUB_ENV"
       - name: Start local services
         shell: bash
         run: |
