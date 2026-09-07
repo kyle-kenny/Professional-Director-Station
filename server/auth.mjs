@@ -5,12 +5,11 @@ const encode = (value) => Buffer.from(typeof value === 'string' ? value : JSON.s
 const decodeJson = (value) => JSON.parse(Buffer.from(value, 'base64url').toString('utf8'));
 
 function resolvedSecret(secret) {
-  const configured = String(secret ?? '').trim();
-  if (configured) return configured;
   const host = process.env.PDS_COLLAB_HOST ?? '127.0.0.1';
   const loopback = host === '127.0.0.1' || host === 'localhost' || host === '::1';
   if (loopback && process.env.PDS_ALLOW_INSECURE_LOCAL_AUTH === '1') return LOCAL_AUDIT_SECRET;
-  return '';
+  const configured = String(secret ?? '').trim();
+  return configured;
 }
 
 function signature(input, secret) {
