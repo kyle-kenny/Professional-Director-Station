@@ -8,6 +8,7 @@ import './pipeline.css';
 import './ai.css';
 import './assets-workspace.css';
 import './integrity.css';
+import './pose.css';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
