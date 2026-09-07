@@ -15,6 +15,7 @@ jobs:
         with:
           node-version: 22
       - run: npm install --no-audit --no-fund
+      - run: npm run audit:deps
       - run: npm run audit:static
       - run: npm run audit:windows
       - run: npm run audit:collab
@@ -22,3 +23,44 @@ jobs:
       - run: npm run audit:ai
       - run: npm test
       - run: npm run build
+
+  browser-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - run: |
+          mkdir -p audit-artifacts
+          cp package-lock.json audit-artifacts/package-lock.json
+      - run: npm run audit:deps
+      - run: npx playwright install --with-deps chromium
+      - run: npm run check
+      - name: Configure local audit authentication
+        shell: bash
+        run: echo "PDS_AUTH_SECRET=$(node -e \"process.stdout.write('pds-ci-' + 'x'.repeat(40))\")" >> "$GITHUB_ENV"
+      - name: Start local services
+        shell: bash
+        run: |
+          node server/collab-server.mjs > audit-artifacts/collab-server.log 2>&1 &
+          npm run preview -- --host 127.0.0.1 --port 4173 > audit-artifacts/vite-preview.log 2>&1 &
+          for i in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:4173/ > /dev/null; then exit 0; fi
+            sleep 1
+          done
+          cat audit-artifacts/vite-preview.log
+          exit 1
+      - name: Chromium end-to-end and visual audit
+        env:
+          PDS_E2E_URL: http://127.0.0.1:4173
+          PDS_VISUAL_ARTIFACT_DIR: audit-artifacts
+        run: npm run test:visual
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: final-audit-artifacts
+          path: audit-artifacts/
+          if-no-files-found: error
