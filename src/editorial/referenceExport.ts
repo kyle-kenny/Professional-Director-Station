@@ -39,8 +39,10 @@ export function resolveReferenceExportSize(shot: Shot, options: ReferenceExportO
     const height = even(Math.max(180, options.height));
     return { width: even(height * shot.frameAspect), height };
   }
-  const width = 1280;
-  return { width, height: even(width / shot.frameAspect) };
+
+  const longEdge = 960;
+  if (shot.frameAspect >= 1) return { width: longEdge, height: even(longEdge / shot.frameAspect) };
+  return { width: even(longEdge * shot.frameAspect), height: longEdge };
 }
 
 export async function exportShotReferenceMp4(shot: Shot, options: ReferenceExportOptions = {}): Promise<ReferenceExportResult> {
@@ -56,13 +58,14 @@ export async function exportShotReferenceMp4(shot: Shot, options: ReferenceExpor
 
   const target = new BufferTarget();
   const output = new Output({ format: new Mp4OutputFormat(), target });
-  const videoSource = new CanvasSource(canvas, { codec: 'avc', quality: new Quality('high') });
+  const referenceQuality = new Quality('medium');
+  const videoSource = new CanvasSource(canvas, { codec: 'avc', quality: referenceQuality });
   output.addVideoTrack(videoSource, { frameRate: shot.fps });
 
   const mix = await renderShotAudioMixdown(shot);
   let audioSource: AudioBufferSource | undefined;
   if (mix.buffer) {
-    audioSource = new AudioBufferSource({ codec: 'aac', quality: new Quality('high') });
+    audioSource = new AudioBufferSource({ codec: 'aac', quality: new Quality('medium') });
     output.addAudioTrack(audioSource);
   }
 
@@ -73,8 +76,11 @@ export async function exportShotReferenceMp4(shot: Shot, options: ReferenceExpor
     await videoSource.add(frame / shot.fps, 1 / shot.fps);
     options.onProgress?.((frame + 1) / Math.max(1, plan.frames + (mix.buffer ? 1 : 0)));
   }
+  videoSource.close();
+
   if (audioSource && mix.buffer) {
     await audioSource.add(mix.buffer);
+    audioSource.close();
     options.onProgress?.(1);
   }
   await output.finalize();
