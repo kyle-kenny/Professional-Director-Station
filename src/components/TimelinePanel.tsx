@@ -12,11 +12,12 @@ import { WaveformStrip } from './WaveformStrip';
 import { exportShotToOtio, parseOtioEditorial } from '../editorial/otio';
 import { downloadText, exportShotReferenceMp4 } from '../editorial/referenceExport';
 import { audioKindZh } from '../i18n/zhCN';
+import { addActorPoseKeyframe, removeActorPoseKeyframe } from '../store/poseRegistry';
 
 const kinds: AudioClip['kind'][] = ['dialogue', 'music', 'sfx', 'ambience'];
 const markerColors: TimelineMarker['color'][] = ['amber', 'blue', 'red', 'green', 'violet'];
 const markerColorZh: Record<TimelineMarker['color'], string> = { amber: '琥珀', blue: '蓝色', red: '红色', green: '绿色', violet: '紫色' };
-const actionZh: Record<string, string> = { idle: '静止', dialogue: '对话', hold: '保持', point: '指向', guard: '警戒', crouch: '蹲伏', sit: '坐姿', walk: '行走' };
+const actionZh: Record<string, string> = { idle: '静止', dialogue: '对话', hold: '保持', point: '指向', guard: '警戒', crouch: '蹲伏', sit: '坐姿', walk: '行走', 'pose-edit': '自定义调姿', 'custom-pose': '自定义姿势' };
 
 function formatTimecode(frame: number, fps: number): string {
   const safe = Math.max(0, Math.round(frame));
@@ -187,9 +188,12 @@ export function TimelinePanel() {
     <div className="track camera-track"><b>摄影机运动预设</b>{(Object.entries(cameraRigPresets) as [CameraRigPresetId, (typeof cameraRigPresets)[CameraRigPresetId]][]).map(([id, preset]) => <button className="wide" key={id} title={preset.description} onClick={() => applyCameraRigPreset(id)}>{preset.label}</button>)}</div>
 
     {shot.actors.map((actor) => <div className="track actor-track" key={actor.id}>
-      <b>{actor.name}</b><div className="clip">{actionZh[actor.action] ?? actor.action} · {actor.path.length} 个关键帧</div>
-      {actor.path.map((frame) => <button className="wide" key={`${actor.id}-${frame.time}`} title="点击定位；Shift+点击删除" onClick={(event) => event.shiftKey ? removeActorKeyframe(actor.id, frame.time) : setTime(frame.time)}>关键帧 {timeToFrame(frame.time, shot.fps)}</button>)}
-      <button className="wide" onClick={() => addActorKeyframe(actor.id)}>+ 人物关键帧 · 第 {currentFrame} 帧</button>
+      <b>{actor.name}</b><div className="clip">整体运动：{actionZh[actor.action] ?? actor.action} · {actor.path.length} 个关键帧</div>
+      {actor.path.map((frame) => <button className="wide" key={`${actor.id}-${frame.time}`} title="点击定位；Shift+点击删除" onClick={(event) => event.shiftKey ? removeActorKeyframe(actor.id, frame.time) : setTime(frame.time)}>位移 K · 第 {timeToFrame(frame.time, shot.fps)} 帧</button>)}
+      <button className="wide" onClick={() => addActorKeyframe(actor.id)}>+ 位移关键帧 · 第 {currentFrame} 帧</button>
+      <div className="clip pose-track-label">骨骼姿势 · {actor.posePath?.length ?? 0} 个关键帧</div>
+      {(actor.posePath ?? []).map((frame) => <button className="wide pose-key-button" key={`${actor.id}-pose-${frame.time}`} title="点击定位；Shift+点击删除" onClick={(event) => event.shiftKey ? removeActorPoseKeyframe(actor.id, frame.time) : setTime(frame.time)}>姿势 K · 第 {timeToFrame(frame.time, shot.fps)} 帧</button>)}
+      <button className="wide" onClick={() => addActorPoseKeyframe(actor.id)}>+ 姿势关键帧 · 第 {currentFrame} 帧</button>
     </div>)}
 
     {shot.lights.map((source) => { const light = sampleLight(source, time); return <div className="track light-track" key={source.id}><b>灯光 · {source.name}</b><div className="clip">强度 {light.intensity.toFixed(2)} · {Math.round(light.colorTemperatureK)}K · {source.path.length} 个关键帧</div>{source.path.map((frame) => <button className="wide" key={`${source.id}-${frame.time}`} title="点击定位；Shift+点击删除" onClick={(event) => event.shiftKey ? removeLightKeyframe(source.id, frame.time) : setTime(frame.time)}>关键帧 {timeToFrame(frame.time, shot.fps)}</button>)}<button className="wide" onClick={() => addLightKeyframe(source.id)}>+ 灯光关键帧 · 第 {currentFrame} 帧</button></div>; })}
@@ -209,6 +213,6 @@ export function TimelinePanel() {
         <div className="meta">{(audio.sourceFileName ?? audio.uri) || '无媒体源'}{audio.sampleRate ? ` · ${audio.sampleRate}Hz · ${audio.channels} 声道` : ''}</div>
       </div>)}
     </div>)}
-    <div className="timeline-note">时间基以帧为权威值，秒数仅由“帧 ÷ 帧率”派生。人物、摄影机、灯光、音频、标记、备注、OTIO 与 MP4 共用同一时基；MP4 画面与 2D 构图共用同一导演画面渲染器。</div>
+    <div className="timeline-note">时间基以帧为权威值，秒数仅由“帧 ÷ 帧率”派生。人物整体位移、骨骼姿势、摄影机、灯光、音频、标记、备注、OTIO 与 MP4 共用同一时基；姿势轨与 3D FK/IK 调姿使用同一帧号。</div>
   </div>;
 }
