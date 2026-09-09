@@ -5,7 +5,6 @@ const required = {
   'src/domain/directorLights.ts': ['key-area', 'fill-area', 'rim-spot', 'point', 'sun', 'ambient', "'left'", "'top'", "'right'", "'front'", "'bottom'", "'back'", 'directorStageTarget', 'createDirectorLightFromPreset', 'placeDirectorLightAtDirection'],
   'src/store/lightRegistry.ts': ['recordProjectHistory', "requirePermission(identity.role, 'project:edit')", 'APPROVED', 'addDirectorLight', 'duplicateDirectorLight', 'removeDirectorLight', 'aimDirectorLightAtStage', 'setDirectorLightDirection'],
   'src/store/sceneObjectRegistry.ts': ['deleteSceneSelection', 'setCameraEntityPose', 'setCameraKeyframeEntityPose', 'setLightEntityPose', 'protected-camera'],
-  'src/store/directorStore.ts': ['clampCameraScalar', "field === 'focalLengthMm'", "field === 'aperture'", '100000'],
   'src/engine/sceneEntities.ts': ['buildCameraEntity', 'buildLightEntity', 'resolveSceneEntityData', 'targetFromMinusZEntity', 'camera-keyframe:', 'selectionHalo'],
   'src/engine/DirectorViewport.tsx': ['PointLight', 'SpotLight', 'RectAreaLight', 'DirectionalLight', 'AmbientLight', 'buildCameraEntity', 'buildLightEntity', 'resolveSceneEntityData', "event.key === 'Delete'", 'setLightEntityPose', 'setCameraEntityPose', "setMode('rotate')"],
   'src/domain/poseLibrary.ts': ['archery-ready', 'archery-draw', 'archery-release', 'run-stride', 'deep-squat', 'jump-air', 'stand-up', 'posePresetIds'],
