@@ -1,6 +1,15 @@
 import * as THREE from 'three';
 import type { ShotCamera, Vec3 } from '../domain/model';
 
+export type CameraDepthOfField = {
+  sensorHeightMm: number;
+  circleOfConfusionMm: number;
+  hyperfocalM: number;
+  nearM: number;
+  farM: number;
+  validFocus: boolean;
+};
+
 export function focalLengthToHorizontalFovDeg(focalLengthMm: number, sensorWidthMm: number): number {
   return THREE.MathUtils.radToDeg(2 * Math.atan(sensorWidthMm / (2 * focalLengthMm)));
 }
@@ -8,6 +17,45 @@ export function focalLengthToHorizontalFovDeg(focalLengthMm: number, sensorWidth
 export function focalLengthToVerticalFovDeg(focalLengthMm: number, sensorWidthMm: number, aspect = 16 / 9): number {
   const sensorHeight = sensorWidthMm / aspect;
   return THREE.MathUtils.radToDeg(2 * Math.atan(sensorHeight / (2 * focalLengthMm)));
+}
+
+/**
+ * Circle of confusion uses a sensor-diagonal / 1500 criterion. This scales the
+ * acceptable blur circle with filmback instead of assuming a fixed full-frame
+ * value, while remaining close to the conventional ~0.03 mm 35 mm criterion.
+ */
+export function cameraDepthOfField(
+  camera: Pick<ShotCamera, 'focalLengthMm' | 'sensorWidthMm' | 'aperture' | 'focusDistanceM'>,
+  aspect = 16 / 9,
+): CameraDepthOfField {
+  const safeAspect = Math.max(0.01, aspect);
+  const sensorHeightMm = camera.sensorWidthMm / safeAspect;
+  const sensorDiagonalMm = Math.hypot(camera.sensorWidthMm, sensorHeightMm);
+  const circleOfConfusionMm = sensorDiagonalMm / 1500;
+  const focalLengthM = camera.focalLengthMm / 1000;
+  const circleOfConfusionM = circleOfConfusionMm / 1000;
+  const hyperfocalM = (focalLengthM * focalLengthM) / (camera.aperture * circleOfConfusionM) + focalLengthM;
+  const focusDistanceM = camera.focusDistanceM;
+  const validFocus = focusDistanceM > focalLengthM;
+
+  if (!validFocus) {
+    return {
+      sensorHeightMm,
+      circleOfConfusionMm,
+      hyperfocalM,
+      nearM: Number.NaN,
+      farM: Number.NaN,
+      validFocus: false,
+    };
+  }
+
+  const nearM = (hyperfocalM * focusDistanceM) / (hyperfocalM + (focusDistanceM - focalLengthM));
+  const farDenominator = hyperfocalM - (focusDistanceM - focalLengthM);
+  const farM = farDenominator <= 0
+    ? Number.POSITIVE_INFINITY
+    : (hyperfocalM * focusDistanceM) / farDenominator;
+
+  return { sensorHeightMm, circleOfConfusionMm, hyperfocalM, nearM, farM, validFocus: true };
 }
 
 export function fitAspectRect(width: number, height: number, aspect: number): { x: number; y: number; width: number; height: number } {
