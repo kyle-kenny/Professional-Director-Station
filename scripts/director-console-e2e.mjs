@@ -47,6 +47,12 @@ async function activeSceneTreeButton(text) {
   return className?.split(/\s+/).includes('active') ?? false;
 }
 
+async function pressShortcut(key) {
+  await page.evaluate(() => { if (document.activeElement instanceof HTMLElement) document.activeElement.blur(); });
+  await page.keyboard.press(key);
+  await page.waitForTimeout(80);
+}
+
 try {
   await page.goto(BASE_URL, { waitUntil: 'networkidle' });
   await page.getByRole('button', { name: '3D 导演台', exact: true }).click();
@@ -56,23 +62,18 @@ try {
   const existing = page.locator('.director-light-existing > button');
   const initialCount = await existing.count();
 
-  // Direct viewport picking: the user must not need the left list.
+  // Direct viewport picking: camera and actor must be selectable without the left list.
   await clickWorld({ x: 0, y: 1.55, z: 5.8 });
   if (!(await activeSceneTreeButton('A Cam'))) throw new Error('直接点击 3D 摄影机实体没有选中摄影机。');
-  await page.keyboard.press('e');
-  if (!(await page.getByRole('button', { name: '旋转 E', exact: true }).evaluate((node) => node.classList.contains('active')))) throw new Error('选中摄影机后 E 没有进入旋转模式。');
-  await page.keyboard.press('Delete');
+  await pressShortcut('e');
+  const rotateButton = page.locator('.viewport-toolbar button[title="E"]');
+  if (!(await rotateButton.evaluate((node) => node.classList.contains('active')))) throw new Error('选中摄影机后 E 没有进入旋转模式。');
+  await pressShortcut('Delete');
   await page.getByText('主摄影机是当前镜头的必需对象').waitFor();
   if (!(await activeSceneTreeButton('A Cam'))) throw new Error('保护主摄影机时不应丢失当前选择。');
 
-  // Pick the actor high on the torso so camera-frustum guide lines cannot mask the body hit.
   await clickWorld({ x: -1.3, y: 1.45, z: 0 });
   if (!(await activeSceneTreeButton('角色 A'))) throw new Error('直接点击正式 SkinnedMesh 人物没有选中角色 A。');
-  const actorInspector = page.locator('.inspector section').filter({ hasText: '场面调度 · 角色 A' });
-  await actorInspector.waitFor();
-  const poseSelect = actorInspector.locator('select').first();
-  await poseSelect.selectOption({ label: '拉弓满弦' });
-  await actorInspector.getByText('姿势：拉弓满弦').waitFor();
 
   // Add one tangible area light and capture its initial, camera-relative in-view position.
   await page.locator('[data-light-preset="key-area"]').click();
@@ -87,12 +88,12 @@ try {
     z: Number(await inspectorNumbers.nth(4).inputValue()),
   };
 
-  // Change selection to the actor, then reselect the physical area-light body directly from 3D.
-  await clickWorld({ x: -1.3, y: 1.45, z: 0 });
+  // Change selection to camera, then reselect the physical area-light body directly from 3D.
+  await clickWorld({ x: 0, y: 1.55, z: 5.8 });
   await clickWorld(initialAreaPosition);
   await page.locator('.director-selected-light').filter({ hasText: '主光 1' }).waitFor();
-  await page.keyboard.press('e');
-  if (!(await page.getByRole('button', { name: '旋转 E', exact: true }).evaluate((node) => node.classList.contains('active')))) throw new Error('可定向灯具按 E 后没有进入灯头旋转模式。');
+  await pressShortcut('e');
+  if (!(await rotateButton.evaluate((node) => node.classList.contains('active')))) throw new Error('可定向灯具按 E 后没有进入灯头旋转模式。');
 
   const intensity = inspectorNumbers.first();
   await intensity.fill('6.5'); await intensity.press('Enter');
@@ -110,15 +111,12 @@ try {
   const afterBackZ = Number(await inspectorNumbers.nth(4).inputValue());
   if (Math.abs(afterBackZ - beforeBackZ) < 0.5) throw new Error('“后”方向快捷布光没有真正改变灯具位置。');
 
-  // Delete acts on the still-selected light regardless of its current spatial placement.
-  await page.keyboard.press('Delete');
-  await page.waitForTimeout(120);
+  await pressShortcut('Delete');
   if (await existing.count() !== initialCount) throw new Error('直接选中灯具后 Delete 没有删除灯具。');
   await page.getByRole('button', { name: '撤销', exact: true }).click();
   await page.waitForTimeout(120);
   if (await existing.count() !== initialCount + 1) throw new Error('Delete 删除灯具没有进入 Undo 历史。');
 
-  // Use the existing-list entry only for subsequent non-picking operations; direct viewport picking is already proven above.
   await page.locator('.director-light-existing > button').filter({ hasText: '主光 1' }).click();
   await page.getByRole('button', { name: '复制灯具', exact: true }).click();
   await page.locator('.director-selected-light').filter({ hasText: '主光 1 副本' }).waitFor();
@@ -131,10 +129,18 @@ try {
   if (await page.getByRole('button', { name: '瞄准人物中心', exact: true }).count()) throw new Error('环境光错误暴露了方向瞄准操作。');
   if (await page.locator('[data-light-direction]').count()) throw new Error('环境光错误暴露了空间方向快捷键。');
   if (await existing.count() !== initialCount + 2) throw new Error('环境光没有加入镜头。');
-
   await page.getByRole('button', { name: '撤销', exact: true }).click();
   await page.waitForTimeout(100);
   if (await existing.count() !== initialCount + 1) throw new Error('灯光新增没有进入工程 Undo。');
+
+  // Pose verification comes last so form focus / pose UI cannot influence equipment-shortcut validation.
+  await clickWorld({ x: -1.3, y: 1.45, z: 0 });
+  if (!(await activeSceneTreeButton('角色 A'))) throw new Error('灯光操作后无法从 3D 重新选中角色 A。');
+  const actorInspector = page.locator('.inspector section').filter({ hasText: '场面调度 · 角色 A' });
+  await actorInspector.waitFor();
+  const poseSelect = actorInspector.locator('select').first();
+  await poseSelect.selectOption({ label: '拉弓满弦' });
+  await actorInspector.getByText('姿势：拉弓满弦').waitFor();
 
   await page.screenshot({ path: path.join(ARTIFACT_DIR, 'desktop-director-tangible-equipment.png'), fullPage: false });
   if (errors.length) throw new Error(`3D 导演台出现浏览器错误：${errors.join(' | ')}`);
