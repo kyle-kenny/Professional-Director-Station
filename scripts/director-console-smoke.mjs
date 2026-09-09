@@ -1,12 +1,13 @@
 import fs from 'node:fs';
 
 const required = {
-  'src/components/DirectorConsole3D.tsx': ['灯光台', 'directorLightToolPresets', 'addDirectorLight', '瞄准人物中心', '复制灯具', '当前帧关键帧'],
-  'src/domain/directorLights.ts': ['key-area', 'fill-area', 'rim-spot', 'point', 'sun', 'ambient', 'directorStageTarget', 'createDirectorLightFromPreset'],
-  'src/store/lightRegistry.ts': ['recordProjectHistory', "requirePermission(identity.role, 'project:edit')", 'APPROVED', 'addDirectorLight', 'duplicateDirectorLight', 'removeDirectorLight', 'aimDirectorLightAtStage'],
+  'src/components/DirectorConsole3D.tsx': ['灯光台', 'directorLightToolPresets', 'directorLightDirectionPresets', 'addDirectorLight', 'setDirectorLightDirection', '瞄准人物中心', '复制灯具', '当前帧关键帧'],
+  'src/domain/directorLights.ts': ['key-area', 'fill-area', 'rim-spot', 'point', 'sun', 'ambient', "'left'", "'top'", "'right'", "'front'", "'bottom'", "'back'", 'directorStageTarget', 'createDirectorLightFromPreset', 'placeDirectorLightAtDirection'],
+  'src/store/lightRegistry.ts': ['recordProjectHistory', "requirePermission(identity.role, 'project:edit')", 'APPROVED', 'addDirectorLight', 'duplicateDirectorLight', 'removeDirectorLight', 'aimDirectorLightAtStage', 'setDirectorLightDirection'],
   'src/engine/DirectorViewport.tsx': ['PointLight', 'SpotLight', 'RectAreaLight', 'DirectionalLight', 'AmbientLight', 'lightObjects', 'setLightPosition'],
-  'src/tests/directorLights.test.ts': ['所有快速灯具都满足工程 Light Schema', '轮廓光使用可投影聚光灯'],
-  'src/director-console.css': ['director-light-dock', 'director-light-tools', 'director-selected-light'],
+  'src/tests/directorLights.test.ts': ['所有快速灯具都满足工程 Light Schema', '轮廓光使用可投影聚光灯', '左上右前下后六个快速打光方向'],
+  'src/director-console.css': ['director-light-dock', 'director-light-tools', 'director-selected-light', 'director-light-directions'],
+  'src/components/ProjectSidebar.tsx': ['3D 场景对象', 'selectedObjectId', 'shot.lights.map'],
 };
 
 const failures = [];
@@ -21,4 +22,4 @@ if (failures.length) {
   failures.forEach((failure) => console.error(` - ${failure}`));
   process.exit(1);
 }
-console.log('PDS 3D 导演台 / 灯光台审计通过：快速摆灯、真实 Three.js 光源、3D 移动、审批只读与 Undo/Redo 合约均存在。');
+console.log('PDS 3D 导演台 / 灯光台审计通过：对象树、快速摆灯、六方向布光、真实 Three.js 光源、3D 移动、审批只读与 Undo/Redo 合约均存在。');
