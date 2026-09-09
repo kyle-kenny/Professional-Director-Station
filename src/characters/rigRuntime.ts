@@ -134,12 +134,17 @@ export function jointDrivenByIk(rig: HumanoidRigState, joint: HumanoidJointId) {
 }
 
 const BASE_QUATERNION_KEY = 'pdsNeutralQuaternion';
+const LAST_ADDITIVE_ROTATION_KEY = 'pdsLastAdditiveRotation';
+const zeroRotation = (): RigVec3 => ({ x: 0, y: 0, z: 0 });
+const normalizeAngle = (value: number) => Math.atan2(Math.sin(value), Math.cos(value));
+const angularDistance = (a: number, b: number) => Math.abs(normalizeAngle(a - b));
 
 export function captureNeutralRigBase(root: THREE.Object3D) {
   for (const joint of humanoidJointIds) {
     const bone = root.getObjectByName(joint);
     if (!bone) continue;
     bone.userData[BASE_QUATERNION_KEY] = bone.quaternion.toArray();
+    bone.userData[LAST_ADDITIVE_ROTATION_KEY] = zeroRotation();
     bone.userData.rigJointId = joint;
   }
 }
@@ -152,7 +157,9 @@ function baseQuaternion(bone: THREE.Object3D) {
 function resetRigBones(root: THREE.Object3D) {
   for (const joint of humanoidJointIds) {
     const bone = root.getObjectByName(joint);
-    if (bone) bone.quaternion.copy(baseQuaternion(bone));
+    if (!bone) continue;
+    bone.quaternion.copy(baseQuaternion(bone));
+    bone.userData[LAST_ADDITIVE_ROTATION_KEY] = zeroRotation();
   }
 }
 
@@ -160,6 +167,7 @@ export function applyAdditiveJointRotationToBone(bone: THREE.Object3D, joint: Hu
   const limited = clampJointRotation(joint, rotation);
   const additive = new THREE.Quaternion().setFromEuler(new THREE.Euler(limited.x, limited.y, limited.z, 'XYZ'));
   bone.quaternion.copy(baseQuaternion(bone).multiply(additive)).normalize();
+  bone.userData[LAST_ADDITIVE_ROTATION_KEY] = { ...limited };
   bone.updateWorldMatrix(false, true);
   return limited;
 }
@@ -270,8 +278,31 @@ export function applyActorRigAtTime(root: THREE.Group, actor: Actor, time: numbe
   return rig;
 }
 
+function alternateXyzEuler(euler: THREE.Euler): RigVec3 {
+  return {
+    x: normalizeAngle(euler.x + Math.PI),
+    y: normalizeAngle(Math.PI - euler.y),
+    z: normalizeAngle(euler.z + Math.PI),
+  };
+}
+
+function candidateScore(joint: HumanoidJointId, candidate: RigVec3, reference?: RigVec3) {
+  const limited = clampJointRotation(joint, candidate);
+  const limitPenalty = angularDistance(candidate.x, limited.x) ** 2 + angularDistance(candidate.y, limited.y) ** 2 + angularDistance(candidate.z, limited.z) ** 2;
+  const continuityPenalty = reference
+    ? angularDistance(candidate.x, reference.x) ** 2 + angularDistance(candidate.y, reference.y) ** 2 + angularDistance(candidate.z, reference.z) ** 2
+    : candidate.x ** 2 + candidate.y ** 2 + candidate.z ** 2;
+  return limitPenalty * 1000 + continuityPenalty;
+}
+
 export function readAdditiveJointRotation(bone: THREE.Object3D, joint: HumanoidJointId): RigVec3 {
   const relative = baseQuaternion(bone).invert().multiply(bone.quaternion.clone()).normalize();
   const euler = new THREE.Euler().setFromQuaternion(relative, 'XYZ');
-  return clampJointRotation(joint, { x: euler.x, y: euler.y, z: euler.z });
+  const primary = { x: euler.x, y: euler.y, z: euler.z };
+  const alternate = alternateXyzEuler(euler);
+  const reference = bone.userData[LAST_ADDITIVE_ROTATION_KEY] as RigVec3 | undefined;
+  const chosen = candidateScore(joint, alternate, reference) < candidateScore(joint, primary, reference) ? alternate : primary;
+  const limited = clampJointRotation(joint, chosen);
+  bone.userData[LAST_ADDITIVE_ROTATION_KEY] = { ...limited };
+  return limited;
 }
