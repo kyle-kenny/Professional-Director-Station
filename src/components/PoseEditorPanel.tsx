@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import type { Actor } from '../domain/model';
+import type { Actor, CustomPose } from '../domain/model';
 import {
   defaultHeadLookAt,
   defaultIkPlacement,
@@ -39,6 +39,7 @@ const radToDeg = (value: number) => value * 180 / Math.PI;
 const degToRad = (value: number) => value * Math.PI / 180;
 const axes: RigAxis[] = ['x', 'y', 'z'];
 const axisLabel: Record<RigAxis, string> = { x: 'X', y: 'Y', z: 'Z' };
+const EMPTY_CUSTOM_POSES: CustomPose[] = [];
 
 const limbControls: Record<IkLimbId, { target: RigControlId; pole: RigControlId }> = {
   leftHand: { target: 'leftHandTarget', pole: 'leftElbowPole' },
@@ -54,7 +55,8 @@ function Vec3Editor({ label, value, disabled, onChange }: { label: string; value
 export function PoseEditorPanel({ actor }: { actor: Actor }) {
   const shot = useDirectorStore((state) => state.getActiveShot());
   const playhead = useDirectorStore((state) => state.playhead);
-  const customPoses = useDirectorStore((state) => state.project.customPoses ?? []);
+  const storedCustomPoses = useDirectorStore((state) => state.project.customPoses);
+  const customPoses = storedCustomPoses ?? EMPTY_CUSTOM_POSES;
   const enabled = usePoseUiStore((state) => state.enabled && state.actorId === actor.id);
   const selectedJoint = usePoseUiStore((state) => state.selectedJoint);
   const selectedControl = usePoseUiStore((state) => state.selectedControl);
