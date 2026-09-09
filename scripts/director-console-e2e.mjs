@@ -83,11 +83,13 @@ try {
   const cameraInspector = page.locator('.inspector section').filter({ hasText: '摄影机 ·' }).last();
   await cameraInspector.waitFor();
   const focusInput = cameraInspector.locator('.number-field').filter({ hasText: '对焦距离（米）' }).locator('input');
+  await focusInput.fill('2'); await focusInput.press('Enter');
+  await page.waitForTimeout(100);
   const originalFocus = Number(await focusInput.inputValue());
   await cameraAssistant.getByRole('button', { name: '对焦选中人物', exact: true }).click();
   await page.waitForTimeout(100);
   const actorFocus = Number(await focusInput.inputValue());
-  if (!Number.isFinite(actorFocus) || actorFocus <= 0 || Math.abs(actorFocus - originalFocus) < 0.01) throw new Error('“对焦选中人物”没有把人物眼位距离写入摄影机。');
+  if (!Number.isFinite(actorFocus) || actorFocus <= 0 || actorFocus < originalFocus + 1) throw new Error('“对焦选中人物”没有把人物焦平面距离写入摄影机。');
   await cameraAssistant.getByRole('button', { name: '对焦镜头目标', exact: true }).click();
   await page.waitForTimeout(100);
   const targetFocus = Number(await focusInput.inputValue());
@@ -167,7 +169,7 @@ try {
 
   await page.screenshot({ path: path.join(ARTIFACT_DIR, 'desktop-director-tangible-equipment.png'), fullPage: false });
   if (errors.length) throw new Error(`3D 导演台出现浏览器错误：${errors.join(' | ')}`);
-  console.log('PDS 3D 导演台 Chromium 旅程通过：摄影助手景深/人物对焦/超焦距、实体摄影机/人物/灯具直接拾取、E 旋转、Delete、Undo、35 组姿势中的拉弓满弦、快速摆灯与六方向布光均可用。');
+  console.log('PDS 3D 导演台 Chromium 旅程通过：摄影助手景深/人物焦平面对焦/超焦距、实体摄影机/人物/灯具直接拾取、E 旋转、Delete、Undo、35 组姿势中的拉弓满弦、快速摆灯与六方向布光均可用。');
 } finally {
   await browser.close();
 }
