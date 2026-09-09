@@ -46,7 +46,7 @@ function luminous(color: THREE.Color, intensity = 1.7) {
   });
 }
 
-function applyEntityData(root: THREE.Object3D, data: SceneEntityData & { entityKind?: string }) {
+function applyEntityData<T extends THREE.Object3D>(root: T, data: SceneEntityData & { entityKind?: string }): T {
   Object.assign(root.userData, data, { sceneEntity: true });
   root.traverse((object) => Object.assign(object.userData, data, { sceneEntity: true }));
   return root;
