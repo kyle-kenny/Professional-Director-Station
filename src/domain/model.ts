@@ -2,6 +2,8 @@ import { z } from 'zod';
 import { projectCollaborationStateSchema } from './collaboration';
 import { pipelineConfigSchema } from './pipeline';
 import { aiProductionStateSchema } from './ai';
+import { actorPoseKeyframeSchema, customPoseSchema, humanoidRigStateSchema } from './humanoidRig';
+export type { ActorPoseKeyframe, CustomPose, HumanoidRigState, HumanoidJointId, IkLimbId, RigControlId } from './humanoidRig';
 
 export const vec3Schema = z.object({ x: z.number(), y: z.number(), z: z.number() });
 export type Vec3 = z.infer<typeof vec3Schema>;
@@ -29,7 +31,23 @@ export const assetRefSchema = z.object({
 export type AssetRef = z.infer<typeof assetRefSchema>;
 
 export const actorSchema = z.object({
-  id: z.string().min(1), name: z.string().min(1), demographics: z.object({ sex: z.enum(['male', 'female']), ageGroup: z.enum(['child', 'teen', 'adult', 'elderly']), ageYears: z.number().int().min(1).max(120), heightM: z.number().min(0.5).max(2.5), shoulderWidthM: z.number().min(0.15).max(0.8), bodyDepthM: z.number().min(0.1).max(0.6), headRadiusM: z.number().min(0.08).max(0.35), posture: z.enum(['upright', 'relaxed', 'elderly']).default('upright') }), transform: transformSchema, eyeHeight: z.number().positive().default(1.65), pose: z.string().default('neutral-standing'), action: z.string().default('idle'), lookAt: vec3Schema.optional(), path: z.array(actorKeyframeSchema).default([]), asset: assetRefSchema.optional(),
+  id: z.string().min(1),
+  name: z.string().min(1),
+  demographics: z.object({
+    sex: z.enum(['male', 'female']), ageGroup: z.enum(['child', 'teen', 'adult', 'elderly']), ageYears: z.number().int().min(1).max(120),
+    heightM: z.number().min(0.5).max(2.5), shoulderWidthM: z.number().min(0.15).max(0.8), bodyDepthM: z.number().min(0.1).max(0.6), headRadiusM: z.number().min(0.08).max(0.35),
+    posture: z.enum(['upright', 'relaxed', 'elderly']).default('upright'),
+  }),
+  transform: transformSchema,
+  eyeHeight: z.number().positive().default(1.65),
+  pose: z.string().default('neutral-standing'),
+  action: z.string().default('idle'),
+  lookAt: vec3Schema.optional(),
+  path: z.array(actorKeyframeSchema).default([]),
+  /** Optional for pds-1 backwards compatibility; populated as soon as the user edits the humanoid rig. */
+  rig: humanoidRigStateSchema.optional(),
+  posePath: z.array(actorPoseKeyframeSchema).optional(),
+  asset: assetRefSchema.optional(),
 });
 export type Actor = z.infer<typeof actorSchema>;
 export const cameraSchema = z.object({ id: z.string().min(1), name: z.string().min(1), position: vec3Schema, target: vec3Schema, focalLengthMm: z.number().min(8).max(1200), sensorWidthMm: z.number().min(1).max(200).default(36), aperture: z.number().min(0.5).max(128).default(2.8), focusDistanceM: z.number().min(0.01).max(100000).default(3), path: z.array(cameraKeyframeSchema).default([]) }).refine((camera) => separatedPoints(camera.position, camera.target), { message: 'Camera position and target must not coincide.' });
@@ -50,7 +68,14 @@ export type Sequence = z.infer<typeof sequenceSchema>;
 export const projectSchema = z.object({
   schemaVersion: z.literal('pds-1'), id: z.string().min(1), name: z.string().min(1),
   coordinateConvention: z.object({ handedness: z.literal('right'), upAxis: z.literal('Y'), forwardAxis: z.literal('-Z'), linearUnit: z.literal('meter') }),
-  sequences: z.array(sequenceSchema).min(1, 'A Project must contain at least one Sequence.'), assets: z.array(assetRefSchema), collaboration: projectCollaborationStateSchema, pipeline: pipelineConfigSchema, ai: aiProductionStateSchema, updatedAt: z.string().min(1),
+  sequences: z.array(sequenceSchema).min(1, 'A Project must contain at least one Sequence.'),
+  assets: z.array(assetRefSchema),
+  /** Legacy pds-1 projects may omit customPoses; parsing normalizes them to one stable collection. */
+  customPoses: z.array(customPoseSchema).default([]),
+  collaboration: projectCollaborationStateSchema,
+  pipeline: pipelineConfigSchema,
+  ai: aiProductionStateSchema,
+  updatedAt: z.string().min(1),
 });
 export type DirectorProject = z.infer<typeof projectSchema>;
 export type WorkspaceMode = '3d' | 'floorplan' | 'frame' | 'timeline' | 'assets' | 'review' | 'pipeline' | 'ai';

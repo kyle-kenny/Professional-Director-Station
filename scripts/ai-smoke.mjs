@@ -1,14 +1,14 @@
 import fs from 'node:fs';
 
 const required = {
-  'src/domain/ai.ts': ['script-breakdown', 'storyboard', 'video', 'pds-http', 'local-structural', 'sourceShotHashSha256', 'controlHashSha256', 'AI endpoints must use HTTPS'],
+  'src/domain/ai.ts': ['script-breakdown', 'storyboard', 'video', 'pds-http', 'local-structural', 'sourceShotHashSha256', 'controlHashSha256', 'AI 远程端点必须使用 HTTPS'],
   'src/ai/scriptBreakdown.ts': ['breakDownScript', 'sourceScriptHashSha256'],
-  'src/ai/controlAnalysis.ts': ['pds-ai-controls-1', 'cameraReference', 'pose:', 'depth:', 'lineart:', 'controlBundleHash'],
+  'src/ai/controlAnalysis.ts': ['pds-ai-controls-1', 'cameraReference', 'pose:', 'depth:', 'lineart:', 'controlBundleHash', 'humanoidRig', 'rigHashSha256', 'sampleActorRig'],
   'src/ai/generation.ts': ['pds-ai-generation-1', 'generateLocalStructuralStoryboard', 'invokePdsAiEndpoint', 'runtimeToken', 'promptHashSha256', 'controlSequence', 'failedGenerationRecord', '256 MiB safety limit'],
   'src/ai/provenance.ts': ['approveGeneratedMedia', 'approvedGeneratedMediaToAsset', "source: 'generated'", 'sourceShotHashSha256'],
   'src/storage/aiMediaStore.ts': ['pds://ai/', 'putAiGeneratedMedia'],
   'src/store/aiRegistry.ts': ['runScriptBreakdown', 'generateAiMedia', 'failedGenerationRecord', 'approveAiOutput', 'promoteApprovedAiOutputToAsset'],
-  'src/components/AIWorkspace.tsx': ['STRUCTURE ANALYSIS', 'MODEL PROFILE / GENERATION', 'GENERATED MEDIA / APPROVAL', 'runtimeToken'],
+  'src/components/AIWorkspace.tsx': ['结构分析', '模型配置 / 生成', '生成媒体 / 审批', 'runtimeToken'],
   'src/tests/aiProduction.test.ts': ['Approved source Shot', 'runtime-secret', 'controlSequence', 'failed attempts', 'local-structural-v1'],
 };
 const failures = [];
@@ -29,4 +29,4 @@ if (failures.length) {
   failures.forEach((failure) => console.error(` - ${failure}`));
   process.exit(1);
 }
-console.log('PDS Gate 5 AI production smoke PASSED');
+console.log('PDS Gate 5 AI production smoke PASSED：Humanoid Rig 逐帧控制与哈希追溯已纳入 AI 控制包。');

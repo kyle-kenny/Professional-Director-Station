@@ -16,11 +16,15 @@ jobs:
           node-version: 22
       - run: npm install --no-audit --no-fund
       - run: npm run audit:deps
+      - run: npm run characters:install
       - run: npm run audit:static
       - run: npm run audit:windows
       - run: npm run audit:collab
       - run: npm run audit:pipeline
       - run: npm run audit:ai
+      - run: npm run audit:characters
+      - run: npm run audit:localization
+      - run: npm run audit:director
       - run: npm test
       - run: npm run build
 

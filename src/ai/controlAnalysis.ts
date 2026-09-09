@@ -1,5 +1,7 @@
 import type { Shot, Vec3 } from '../domain/model';
+import type { HumanoidRigState } from '../domain/humanoidRig';
 import { sampleShotAtFrame } from '../editorial/timelineEngine';
+import { sampleActorRig } from '../characters/rigRuntime';
 import { focalLengthToVerticalFovDeg, projectWorldToFrame } from '../utils/math';
 import { canonicalJson, sha256Text } from '../utils/sha256';
 
@@ -13,7 +15,19 @@ export type AiControlBundle = {
   cameraReference: {
     position: Vec3; target: Vec3; focalLengthMm: number; sensorWidthMm: number; frameAspect: number; verticalFovDeg: number; aperture: number; focusDistanceM: number;
   };
-  pose: Array<{ actorId: string; name: string; pose: string; action: string; position: Vec3; rotation: Vec3; scale: Vec3; lookAt?: Vec3 }>;
+  pose: Array<{
+    actorId: string;
+    name: string;
+    pose: string;
+    action: string;
+    position: Vec3;
+    rotation: Vec3;
+    scale: Vec3;
+    lookAt?: Vec3;
+    /** Full frame-authoritative FK/IK/look-at state, so generation cannot silently discard director posing. */
+    humanoidRig: HumanoidRigState;
+    rigHashSha256: string;
+  }>;
   depth: Array<{ actorId: string; cameraDepthM: number; normalized: number }>;
   lineart: Array<{ actorId: string; head: { x: number; y: number; visible: boolean }; center: { x: number; y: number; visible: boolean }; feet: { x: number; y: number; visible: boolean } }>;
   lights: Array<{ id: string; type: string; position: Vec3; target?: Vec3; intensity: number; colorTemperatureK: number }>;
@@ -27,6 +41,7 @@ const dot = (a: Vec3, b: Vec3) => a.x * b.x + a.y * b.y + a.z * b.z;
 export function analyzeFrameControls(shot: Shot, frame: number): AiControlBundle {
   const sampled = sampleShotAtFrame(shot, frame);
   const camera = sampled.camera;
+  const time = sampled.time;
   const forward = normalize(sub(camera.target, camera.position));
   const rawDepth = sampled.actors.map(({ actor, transform }) => ({ actorId: actor.id, cameraDepthM: Math.max(0, dot(sub(transform.position, camera.position), forward)) }));
   const positive = rawDepth.map((item) => item.cameraDepthM).filter((value) => value > 0);
@@ -45,7 +60,21 @@ export function analyzeFrameControls(shot: Shot, frame: number): AiControlBundle
       position: { ...camera.position }, target: { ...camera.target }, focalLengthMm: camera.focalLengthMm, sensorWidthMm: camera.sensorWidthMm, frameAspect: shot.frameAspect,
       verticalFovDeg: focalLengthToVerticalFovDeg(camera.focalLengthMm, camera.sensorWidthMm, shot.frameAspect), aperture: camera.aperture, focusDistanceM: camera.focusDistanceM,
     },
-    pose: sampled.actors.map(({ actor, transform }) => ({ actorId: actor.id, name: actor.name, pose: actor.pose, action: actor.action, position: { ...transform.position }, rotation: { ...transform.rotation }, scale: { ...transform.scale }, lookAt: actor.lookAt ? { ...actor.lookAt } : undefined })),
+    pose: sampled.actors.map(({ actor, transform }) => {
+      const humanoidRig = sampleActorRig(actor, time);
+      return {
+        actorId: actor.id,
+        name: actor.name,
+        pose: actor.pose,
+        action: actor.action,
+        position: { ...transform.position },
+        rotation: { ...transform.rotation },
+        scale: { ...transform.scale },
+        lookAt: actor.lookAt ? { ...actor.lookAt } : undefined,
+        humanoidRig,
+        rigHashSha256: sha256Text(canonicalJson(humanoidRig)),
+      };
+    }),
     depth: rawDepth.map((item) => ({ ...item, normalized: far === near ? (item.cameraDepthM > 0 ? 0.5 : 0) : Math.min(1, Math.max(0, (item.cameraDepthM - near) / span)) })),
     lineart: sampled.actors.map(({ actor, transform }) => {
       const feetWorld = transform.position;

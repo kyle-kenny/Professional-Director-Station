@@ -4,3 +4,4 @@ dist
 *.local
 coverage
 .pds-collab-data
+public/assets/vendor/quaternius/universal-base-characters/
