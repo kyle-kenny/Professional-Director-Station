@@ -1,6 +1,10 @@
 import * as THREE from 'three';
 import type { CameraKeyframe, DirectorLight, ShotCamera, Vec3 } from '../domain/model';
 
+// CameraHelper is a visual framing guide, never an editable scene entity. Keeping it
+// out of raycasting prevents thin frustum lines from stealing clicks from actors/lights.
+THREE.CameraHelper.prototype.raycast = () => {};
+
 export const cameraKeyframeSelectionId = (time: number) => `camera-keyframe:${time.toFixed(6)}`;
 
 export function parseCameraKeyframeSelectionId(id?: string) {
