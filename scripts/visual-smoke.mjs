@@ -211,7 +211,9 @@ try {
   const riggedActor = exportedShot.actors[0];
   if (!(riggedActor.posePath?.length > 0)) throw new Error('人物姿势关键帧没有进入工程导出。');
   const rigFrame = riggedActor.posePath[0].rig;
-  if (!rigFrame.ik.leftHand.enabled || !rigFrame.ik.leftHand.locked || !rigFrame.ik.leftHand.lockedWorldTarget) throw new Error('左手 IK 世界空间锁定没有进入工程数据。');
+  // The audit mirrors the pose after locking the left hand. Mirror semantics swap left/right limbs,
+  // so the persisted world-space contact must now live on the right hand.
+  if (!rigFrame.ik.rightHand.enabled || !rigFrame.ik.rightHand.locked || !rigFrame.ik.rightHand.lockedWorldTarget) throw new Error('镜像后的右手 IK 世界空间锁定没有进入工程数据。');
   if (!rigFrame.headLookAt.enabled) throw new Error('头部注视状态没有进入工程数据。');
   if (!exported.customPoses?.some((pose) => pose.name === '审计自定义姿势')) throw new Error('自定义姿势没有进入工程导出。');
   if (!exported.assets.some((asset) => asset.id === 'audit-prop')) throw new Error('导入 GLB 资产没有进入工程导出。');
