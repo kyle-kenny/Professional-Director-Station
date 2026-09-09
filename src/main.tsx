@@ -9,6 +9,7 @@ import './ai.css';
 import './assets-workspace.css';
 import './integrity.css';
 import './pose.css';
+import './director-console.css';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
