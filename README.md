@@ -2,9 +2,10 @@
 
 面向导演教学、影视前期制作、多人 Review、Pipeline 交换与可追溯 AI 影视生产的数字导演工作台。
 
-## PDS 1.1.1 能力
+## PDS 1.2 能力
 
 - **3D 导演台**：正式 CC0 Humanoid 角色、真实米制坐标、FK/IK 调姿、35 组基础导演姿势、Transform Gizmo、人物/摄影机/灯光关键帧、焦段/机位预设、曝光与阴影。
+- **摄影助手**：基于 filmback、焦距、光圈与对焦距离实时计算水平/垂直视场角、近远景深与超焦距；可一键对焦镜头目标、选中人物眼位或超焦距，帮助导演在预演阶段直接判断焦段与景深关系。
 - **片场器材实体化**：主摄影机、摄影机动画机位、区域灯、聚光灯、平行光、点光、环境光都有独立 3D 实体；中央视口直接点击即可选择，不依赖左侧对象树。
 - **导演快捷操作**：W 移动、E 旋转、R 人物整体缩放、Delete 删除当前人物/灯具/机位；主摄影机受工程 Schema 保护，避免误删。定向灯旋转后实时更新照射方向，并保留一键瞄准与六方向快速布光。
 - **正式开源人物**：Quaternius Universal Base Characters（CC0 1.0）作为默认 SkinnedMesh/Humanoid 角色源，安装时锁定上游 commit、校验 Git Blob，并生成 SHA-256 provenance；儿童/青少年/成年/老年均使用正式外部网格。
@@ -79,12 +80,12 @@ npm run check
 5. AI Production 审计
 6. 正式人物与 Humanoid Rig 审计
 7. 中文界面审计
-8. 3D 导演台实体器材/快捷操作审计
+8. 3D 导演台实体器材 / 快捷操作 / 摄影助手审计
 9. Vitest 回归测试
 10. TypeScript + Vite production build
 11. Chromium 真实用户旅程与视觉审计
 
-PDS 1.1.1 候选版回归套件为 **85 tests / 18 test files**；最终交付要求 Windows + Ubuntu + Chromium 三路均通过。
+PDS 1.2 候选版回归套件为 **87 tests / 18 test files**；最终交付要求 Windows + Ubuntu + Chromium 三路均通过。
 
 ## 架构原则
 
@@ -96,8 +97,9 @@ PDS 1.1.1 候选版回归套件为 **85 tests / 18 test files**；最终交付�
 6. **Approved 数据保持权威。** Review 版本不可变；AI 输出需要单独审批，不直接修改已批准导演数据。
 7. **跨软件交换不靠猜测。** 坐标、色彩、时间基、材质和 adapter manifest 均显式记录。
 8. **导演台优先直接操控。** 人物、摄影机、机位和灯具应能在 3D 场景直接辨识、点击和操作，列表仅作为辅助导航。
-9. **每次交付通过 Windows + Ubuntu + Chromium 门禁。** 不用“本机能跑”替代跨平台与真实浏览器验收。
+9. **摄影参数必须给导演可读反馈。** 焦距、filmback、光圈和对焦距离不仅保存为元数据，还应转换成视场角、景深和超焦距等可验证结果。
+10. **每次交付通过 Windows + Ubuntu + Chromium 门禁。** 不用“本机能跑”替代跨平台与真实浏览器验收。
 
 ## Roadmap
 
-`docs/ROADMAP.md` 中定义的 **Gate 0 → Gate 5 已全部完成**。PDS 1.1/1.1.1 属于 1.x 产品演进，聚焦正式人物、完整中文化、导演级 FK/IK 调姿和片场器材化 3D 操作。后续工作属于具体 Studio 部署、第三方 DCC 实机认证、性能/UX 优化与新增生产能力。
+`docs/ROADMAP.md` 中定义的 **Gate 0 → Gate 5 已全部完成**。PDS 1.1/1.1.1/1.2 属于 1.x 产品演进，聚焦正式人物、完整中文化、导演级 FK/IK 调姿、片场器材化 3D 操作与摄影光学辅助。后续工作属于具体 Studio 部署、第三方 DCC 实机认证、性能/UX 优化与新增生产能力。
