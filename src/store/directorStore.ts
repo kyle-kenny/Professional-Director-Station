@@ -16,7 +16,6 @@ export type TransformMode = 'translate' | 'rotate' | 'scale';
 export type EditorialImport = { audio: AudioClip[]; markers: TimelineMarker[]; notes: ShotNote[] };
 
 type AudioTimingField = 'start' | 'duration' | 'gainDb';
-type CameraScalarField = 'focalLengthMm' | 'aperture' | 'focusDistanceM';
 
 function loadProject(): DirectorProject {
   try {
@@ -35,13 +34,6 @@ function persist(project: DirectorProject) {
 function stamp(project: DirectorProject): DirectorProject {
   project.updatedAt = new Date().toISOString();
   return project;
-}
-
-function clampCameraScalar(field: CameraScalarField, value: number) {
-  if (!Number.isFinite(value)) return field === 'focalLengthMm' ? 50 : field === 'aperture' ? 2.8 : 3;
-  if (field === 'focalLengthMm') return Math.min(1200, Math.max(8, value));
-  if (field === 'aperture') return Math.min(128, Math.max(0.5, value));
-  return Math.min(100000, Math.max(0.01, value));
 }
 
 type State = {
@@ -69,7 +61,7 @@ type State = {
   applyActorMotionPreset: (actorId: string, id: MotionPresetId) => void;
   addActorKeyframe: (actorId: string) => void;
   removeActorKeyframe: (actorId: string, time: number) => void;
-  updateCamera: (field: CameraScalarField, value: number) => void;
+  updateCamera: (field: 'focalLengthMm' | 'aperture' | 'focusDistanceM', value: number) => void;
   updateCameraVector: (field: 'position' | 'target', axis: keyof Vec3, value: number) => void;
   addCameraKeyframe: () => void;
   removeCameraKeyframe: (time: number) => void;
@@ -267,11 +259,10 @@ export const useDirectorStore = create<State>((set, get) => ({
     actor.path = actor.path.filter((frame) => Math.abs(frame.time - snapped) > tolerance);
   })),
   updateCamera: (field, value) => set((state) => commitActive(state, (shot) => {
-    const safeValue = clampCameraScalar(field, value);
     if (field === 'focalLengthMm' && shot.camera.path.length > 0) {
       const sampled = sampleCamera(shot.camera, state.playhead);
-      upsertCameraKeyframe(shot, state.playhead, { time: state.playhead, position: sampled.position, target: sampled.target, focalLengthMm: safeValue, easing: 'ease-in-out' });
-    } else shot.camera[field] = safeValue;
+      upsertCameraKeyframe(shot, state.playhead, { time: state.playhead, position: sampled.position, target: sampled.target, focalLengthMm: value, easing: 'ease-in-out' });
+    } else shot.camera[field] = value;
   })),
   updateCameraVector: (field, axis, value) => set((state) => commitActive(state, (shot) => {
     if (shot.camera.path.length > 0) {
@@ -326,7 +317,7 @@ export const useDirectorStore = create<State>((set, get) => ({
     } else light.position = { ...position };
   })),
   addLightKeyframe: (lightId) => set((state) => commitActive(state, (shot) => {
-    const light = shot.lights.find((a) => a.id === lightId);
+    const light = shot.lights.find((item) => item.id === lightId);
     if (light) upsertLightKeyframe(light, shot, state.playhead, sampleLight(light, state.playhead));
   })),
   removeLightKeyframe: (lightId, time) => set((state) => commitActive(state, (shot) => {
@@ -387,12 +378,17 @@ export const useDirectorStore = create<State>((set, get) => ({
   })),
   saveVersion: () => set((state) => commitActive(state, (shot) => { shot.version += 1; })),
   exportProject: () => JSON.stringify(get().project, null, 2),
-  importProject: (json) => set((state) => {
-    const project = projectSchema.parse(JSON.parse(json));
-    persist(project);
-    const sequence = project.sequences[0];
-    const shot = sequence.shots[0];
-    const history = recordProjectHistory(state.project, { undoStack: state.undoStack, redoStack: state.redoStack });
-    return { project, activeSequenceId: sequence.id, activeShotId: shot.id, playhead: 0, selectedObjectId: shot.actors[0]?.id, ...history };
-  }),
+  importProject: (json) => {
+    const parsed = stamp(projectSchema.parse(JSON.parse(json)));
+    persist(parsed);
+    set({
+      project: parsed,
+      activeSequenceId: parsed.sequences[0].id,
+      activeShotId: parsed.sequences[0].shots[0].id,
+      playhead: 0,
+      selectedObjectId: parsed.sequences[0].shots[0].actors[0]?.id,
+      undoStack: [],
+      redoStack: [],
+    });
+  },
 }));
