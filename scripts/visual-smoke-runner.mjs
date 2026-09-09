@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 
 const sourcePath = new URL('./visual-smoke.mjs', import.meta.url);
@@ -13,7 +13,8 @@ if (!source.includes(needle)) {
 }
 
 const instrumented = source.replace(needle, replacement);
-const tempPath = path.join(os.tmpdir(), `pds-visual-smoke-${process.pid}.mjs`);
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+const tempPath = path.join(scriptDir, `.visual-smoke-instrumented-${process.pid}.mjs`);
 await fs.writeFile(tempPath, instrumented, 'utf8');
 
 try {
