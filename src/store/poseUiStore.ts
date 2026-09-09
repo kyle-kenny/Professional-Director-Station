@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { HumanoidJointId, RigControlId } from '../domain/humanoidRig';
+import { useDirectorStore } from './directorStore';
 
 type PoseUiState = {
   enabled: boolean;
@@ -19,3 +20,11 @@ export const usePoseUiStore = create<PoseUiState>((set) => ({
   selectControl: (actorId, selectedControl) => set({ enabled: true, actorId, selectedControl, selectedJoint: undefined }),
   clearSelection: () => set({ selectedJoint: undefined, selectedControl: undefined }),
 }));
+
+let previousSelectedObjectId = useDirectorStore.getState().selectedObjectId;
+useDirectorStore.subscribe((state) => {
+  if (state.selectedObjectId === previousSelectedObjectId) return;
+  previousSelectedObjectId = state.selectedObjectId;
+  const pose = usePoseUiStore.getState();
+  if (pose.enabled && state.selectedObjectId !== pose.actorId) pose.setEnabled(false);
+});
