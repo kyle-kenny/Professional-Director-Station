@@ -24,6 +24,7 @@ jobs:
       - run: npm run audit:ai
       - run: npm run audit:characters
       - run: npm run audit:localization
+      - run: npm run audit:director
       - run: npm test
       - run: npm run build
 
