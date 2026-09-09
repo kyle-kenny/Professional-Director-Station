@@ -51,7 +51,7 @@ export function cameraDepthOfField(
 
   const nearM = (hyperfocalM * focusDistanceM) / (hyperfocalM + (focusDistanceM - focalLengthM));
   const farDenominator = hyperfocalM - (focusDistanceM - focalLengthM);
-  const farM = farDenominator <= 0
+  const farM = focusDistanceM >= hyperfocalM || farDenominator <= 0
     ? Number.POSITIVE_INFINITY
     : (hyperfocalM * focusDistanceM) / farDenominator;
 
