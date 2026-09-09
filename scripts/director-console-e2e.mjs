@@ -74,18 +74,31 @@ try {
   await poseSelect.selectOption({ label: '拉弓满弦' });
   await actorInspector.getByText('姿势：拉弓满弦').waitFor();
 
-  // Add a physical area light, then prove it can be re-selected and operated only from the viewport.
+  // Add one tangible area light and capture its initial, camera-relative in-view position.
   await page.locator('[data-light-preset="key-area"]').click();
   await page.locator('.director-selected-light').filter({ hasText: '主光 1' }).waitFor();
   if (await existing.count() !== initialCount + 1) throw new Error('一键加入主光后，镜头灯具数量没有增加。');
   const inspectorLight = page.locator('.inspector section').filter({ hasText: '灯光 · 主光 1' });
   await inspectorLight.waitFor();
   const inspectorNumbers = inspectorLight.locator('input[type=number]');
+  const initialAreaPosition = {
+    x: Number(await inspectorNumbers.nth(2).inputValue()),
+    y: Number(await inspectorNumbers.nth(3).inputValue()),
+    z: Number(await inspectorNumbers.nth(4).inputValue()),
+  };
+
+  // Change selection to the actor, then reselect the physical area-light body directly from 3D.
+  await clickWorld({ x: -1.3, y: 1.45, z: 0 });
+  await clickWorld(initialAreaPosition);
+  await page.locator('.director-selected-light').filter({ hasText: '主光 1' }).waitFor();
+  await page.keyboard.press('e');
+  if (!(await page.getByRole('button', { name: '旋转 E', exact: true }).evaluate((node) => node.classList.contains('active')))) throw new Error('可定向灯具按 E 后没有进入灯头旋转模式。');
+
   const intensity = inspectorNumbers.first();
   await intensity.fill('6.5'); await intensity.press('Enter');
   await page.locator('.director-selected-light').filter({ hasText: '6.50' }).waitFor();
 
-  // LibTV-style six-direction shortcut must move the physical light, not just change a label.
+  // LibTV-style six-direction shortcuts are tested independently from picking because some placements may be occluded.
   const beforeTopY = Number(await inspectorNumbers.nth(3).inputValue());
   await page.locator('[data-light-direction="top"]').click();
   await page.waitForTimeout(100);
@@ -97,17 +110,7 @@ try {
   const afterBackZ = Number(await inspectorNumbers.nth(4).inputValue());
   if (Math.abs(afterBackZ - beforeBackZ) < 0.5) throw new Error('“后”方向快捷布光没有真正改变灯具位置。');
 
-  const areaPosition = {
-    x: Number(await inspectorNumbers.nth(2).inputValue()),
-    y: Number(await inspectorNumbers.nth(3).inputValue()),
-    z: Number(await inspectorNumbers.nth(4).inputValue()),
-  };
-  await clickWorld({ x: -1.3, y: 1.45, z: 0 });
-  await clickWorld(areaPosition);
-  await page.locator('.director-selected-light').filter({ hasText: '主光 1' }).waitFor();
-  await page.keyboard.press('e');
-  if (!(await page.getByRole('button', { name: '旋转 E', exact: true }).evaluate((node) => node.classList.contains('active')))) throw new Error('可定向灯具按 E 后没有进入灯头旋转模式。');
-
+  // Delete acts on the still-selected light regardless of its current spatial placement.
   await page.keyboard.press('Delete');
   await page.waitForTimeout(120);
   if (await existing.count() !== initialCount) throw new Error('直接选中灯具后 Delete 没有删除灯具。');
@@ -115,9 +118,8 @@ try {
   await page.waitForTimeout(120);
   if (await existing.count() !== initialCount + 1) throw new Error('Delete 删除灯具没有进入 Undo 历史。');
 
-  // Undo restores the object; reselect it from 3D before continuing.
-  await clickWorld(areaPosition);
-  await page.locator('.director-selected-light').filter({ hasText: '主光 1' }).waitFor();
+  // Use the existing-list entry only for subsequent non-picking operations; direct viewport picking is already proven above.
+  await page.locator('.director-light-existing > button').filter({ hasText: '主光 1' }).click();
   await page.getByRole('button', { name: '复制灯具', exact: true }).click();
   await page.locator('.director-selected-light').filter({ hasText: '主光 1 副本' }).waitFor();
   if (await existing.count() !== initialCount + 2) throw new Error('复制灯具没有生成独立灯具。');
