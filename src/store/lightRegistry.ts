@@ -1,5 +1,5 @@
 import type { DirectorLight, DirectorProject, Shot } from '../domain/model';
-import { createDirectorLightFromPreset, directorStageTarget, type DirectorLightToolPresetId } from '../domain/directorLights';
+import { createDirectorLightFromPreset, directorStageTarget, placeDirectorLightAtDirection, type DirectorLightDirectionId, type DirectorLightToolPresetId } from '../domain/directorLights';
 import { getSessionIdentity } from '../collab/sessionIdentity';
 import { requirePermission } from '../collab/authorization';
 import { recordProjectHistory } from './projectHistory';
@@ -65,7 +65,7 @@ export function duplicateDirectorLight(lightId: string): string {
     const source = shot.lights.find((item) => item.id === lightId);
     if (!source) throw new Error('找不到要复制的灯具。');
     const clone: DirectorLight = structuredClone(source);
-    clone.id = uniqueId(`light-copy`);
+    clone.id = uniqueId('light-copy');
     clone.name = `${source.name} 副本`;
     clone.position.x += 0.45;
     clone.position.z += 0.25;
@@ -92,6 +92,38 @@ export function aimDirectorLightAtStage(lightId: string) {
     if (!light) throw new Error('找不到要重新瞄准的灯具。');
     if (light.type === 'point' || light.type === 'ambient') return light.id;
     light.target = directorStageTarget(shot, useDirectorStore.getState().playhead);
+    return light.id;
+  });
+}
+
+export function setDirectorLightDirection(lightId: string, directionId: DirectorLightDirectionId) {
+  commitLights((_project, shot) => {
+    const index = shot.lights.findIndex((item) => item.id === lightId);
+    if (index < 0) throw new Error('找不到要调整方向的灯具。');
+    const light = shot.lights[index];
+    if (light.type === 'ambient') return light.id;
+    const time = useDirectorStore.getState().playhead;
+    const positioned = placeDirectorLightAtDirection(shot, time, light, directionId);
+    if (light.path.length > 0) {
+      // Quick direction is a blocking/layout operation: keep the light's authored properties,
+      // then route the position/target change through the frame-authoritative store methods.
+      const state = useDirectorStore.getState();
+      const snapped = Math.round(time * shot.fps) / shot.fps;
+      const tolerance = 0.5 / shot.fps;
+      const existing = light.path.find((frame) => Math.abs(frame.time - snapped) <= tolerance);
+      const frame = {
+        time: snapped,
+        position: { ...positioned.position },
+        target: positioned.target ? { ...positioned.target } : undefined,
+        intensity: positioned.intensity,
+        colorTemperatureK: positioned.colorTemperatureK,
+        easing: existing?.easing ?? 'ease-in-out' as const,
+      };
+      if (existing) Object.assign(existing, frame);
+      else light.path.push(frame);
+      light.path.sort((a, b) => a.time - b.time);
+      void state;
+    } else shot.lights[index] = positioned;
     return light.id;
   });
 }
