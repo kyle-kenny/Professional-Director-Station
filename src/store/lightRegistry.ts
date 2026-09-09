@@ -31,7 +31,8 @@ function commitLights(mutator: (project: DirectorProject, shot: Shot) => string 
   const project = structuredClone(state.project);
   const shot = activeShot(project);
   requireEditable(shot);
-  const selectedId = mutator(project, shot);
+  const mutationResult = mutator(project, shot);
+  const selectedId = typeof mutationResult === 'string' ? mutationResult : undefined;
   persist(project);
   useDirectorStore.setState({ project, ...history, selectedObjectId: selectedId ?? state.selectedObjectId });
   return selectedId;
@@ -105,9 +106,7 @@ export function setDirectorLightDirection(lightId: string, directionId: Director
     const time = useDirectorStore.getState().playhead;
     const positioned = placeDirectorLightAtDirection(shot, time, light, directionId);
     if (light.path.length > 0) {
-      // Quick direction is a blocking/layout operation: keep the light's authored properties,
-      // then route the position/target change through the frame-authoritative store methods.
-      const state = useDirectorStore.getState();
+      // 快速方向属于 blocking 操作：有灯光轨时只写当前整帧，不破坏其他关键帧。
       const snapped = Math.round(time * shot.fps) / shot.fps;
       const tolerance = 0.5 / shot.fps;
       const existing = light.path.find((frame) => Math.abs(frame.time - snapped) <= tolerance);
@@ -122,7 +121,6 @@ export function setDirectorLightDirection(lightId: string, directionId: Director
       if (existing) Object.assign(existing, frame);
       else light.path.push(frame);
       light.path.sort((a, b) => a.time - b.time);
-      void state;
     } else shot.lights[index] = positioned;
     return light.id;
   });
