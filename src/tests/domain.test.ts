@@ -10,6 +10,12 @@ describe('industrial project contract',()=>{
  it('validates the default project and fixed coordinate convention',()=>{
   const p=projectSchema.parse(createDefaultProject());
   expect(p.coordinateConvention).toEqual({handedness:'right',upAxis:'Y',forwardAxis:'-Z',linearUnit:'meter'});
+  expect(p.customPoses).toEqual([]);
+ });
+ it('normalizes legacy projects that omit the custom pose collection',()=>{
+  const legacy={...createDefaultProject()} as Record<string,unknown>;
+  delete legacy.customPoses;
+  expect(projectSchema.parse(legacy).customPoses).toEqual([]);
  });
  it('ships the complete standard directing cast',()=>{
   expect(actorPresetList).toHaveLength(8);
