@@ -8,12 +8,13 @@ import { directorSkeletonContract, validateSkeletonMapping } from '../domain/ske
 import { projectSchema } from '../domain/model';
 
 describe('Gate 1 director interaction contracts', () => {
-  it('ships a finite director pose library with a safe fallback', () => {
-    expect(posePresetList).toHaveLength(8);
+  it('ships a broad finite director pose library with a safe fallback', () => {
+    expect(posePresetList.length).toBeGreaterThanOrEqual(30);
     expect(new Set(posePresetList.map((pose) => pose.id)).size).toBe(posePresetList.length);
     for (const pose of posePresetList) {
       expect(pose.action.length).toBeGreaterThan(0);
-      for (const rotation of Object.values(pose.jointRotations)) {
+      expect(pose.category.length).toBeGreaterThan(0);
+      for (const rotation of [...Object.values(pose.jointRotations), ...Object.values(pose.rigRotations ?? {})]) {
         if (!rotation) continue;
         expect(Number.isFinite(rotation.x)).toBe(true);
         expect(Number.isFinite(rotation.y)).toBe(true);

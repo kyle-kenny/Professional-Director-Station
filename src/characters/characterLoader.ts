@@ -60,6 +60,27 @@ function applyAgeTreatment(model: THREE.Group, actor: Actor) {
   }
 }
 
+/**
+ * Invisible, raycastable selection volume around the real skinned character.
+ * The visible character remains the CC0 SkinnedMesh; this only makes viewport picking
+ * forgiving around gaps between limbs/clothing, like selection proxies in DCC tools.
+ */
+function buildCharacterSelectionProxy(actor: Actor) {
+  const width = Math.max(0.48, actor.demographics.shoulderWidthM * 1.45);
+  const height = Math.max(0.5, actor.demographics.heightM * 0.96);
+  const depth = Math.max(0.38, actor.demographics.bodyDepthM * 1.9);
+  const material = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
+  material.colorWrite = false;
+  const proxy = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), material);
+  proxy.name = `选择代理 · ${actor.name}`;
+  proxy.position.y = height * 0.5;
+  proxy.userData.actorId = actor.id;
+  proxy.userData.selectionProxy = true;
+  proxy.castShadow = false;
+  proxy.receiveShadow = false;
+  return proxy;
+}
+
 export type DirectorCharacterInstance = {
   root: THREE.Group;
   descriptor: OpenCharacterDescriptor;
@@ -84,6 +105,7 @@ export async function instantiateDirectorCharacter(actor: Actor): Promise<Direct
   root.userData.characterSource = 'quaternius-cc0';
   root.userData.characterVariant = descriptor.id;
   root.add(model);
+  root.add(buildCharacterSelectionProxy(actor));
   return { root, descriptor };
 }
 
@@ -93,6 +115,7 @@ export function disposeCharacterInstance(root: THREE.Object3D) {
     const material = mesh.material as THREE.Material | THREE.Material[] | undefined;
     if (Array.isArray(material)) material.forEach((entry) => entry.dispose());
     else material?.dispose?.();
-    // Geometry belongs to the cached CC0 template and is intentionally shared.
+    if (mesh.geometry && !object.userData.sharedCharacterGeometry) mesh.geometry.dispose();
+    // Imported CC0 geometry belongs to the cached template and remains shared.
   });
 }

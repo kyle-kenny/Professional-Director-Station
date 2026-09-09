@@ -51,6 +51,9 @@ export function presetRigForActor(actor: Actor): HumanoidRigState {
     ['thigh_r', preset.jointRotations.rightLeg],
   ];
   for (const [joint, rotation] of map) if (rotation) rig.fk[joint] = clampJointRotation(joint, rotation);
+  for (const [joint, rotation] of Object.entries(preset.rigRotations ?? {})) {
+    if (rotation && humanoidJointIds.includes(joint as HumanoidJointId)) rig.fk[joint as HumanoidJointId] = clampJointRotation(joint as HumanoidJointId, rotation);
+  }
   return rig;
 }
 
