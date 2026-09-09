@@ -65,7 +65,8 @@ try {
   await page.getByText('主摄影机是当前镜头的必需对象').waitFor();
   if (!(await activeSceneTreeButton('A Cam'))) throw new Error('保护主摄影机时不应丢失当前选择。');
 
-  await clickWorld({ x: -1.3, y: 1.0, z: 0 });
+  // Pick the actor high on the torso so camera-frustum guide lines cannot mask the body hit.
+  await clickWorld({ x: -1.3, y: 1.45, z: 0 });
   if (!(await activeSceneTreeButton('角色 A'))) throw new Error('直接点击正式 SkinnedMesh 人物没有选中角色 A。');
   const actorInspector = page.locator('.inspector section').filter({ hasText: '场面调度 · 角色 A' });
   await actorInspector.waitFor();
@@ -73,18 +74,7 @@ try {
   await poseSelect.selectOption({ label: '拉弓满弦' });
   await actorInspector.getByText('姿势：拉弓满弦').waitFor();
 
-  // Directly pick the default physical key light, rotate it with E, delete with Delete, then undo.
-  await clickWorld({ x: 4, y: 7, z: 4 });
-  if (!(await activeSceneTreeButton('主光'))) throw new Error('直接点击 3D 灯具实体没有选中默认主光。');
-  await page.keyboard.press('e');
-  if (!(await page.getByRole('button', { name: '旋转 E', exact: true }).evaluate((node) => node.classList.contains('active')))) throw new Error('可定向灯具按 E 后没有进入灯头旋转模式。');
-  await page.keyboard.press('Delete');
-  await page.waitForTimeout(120);
-  if (await existing.count() !== initialCount - 1) throw new Error('直接选中灯具后 Delete 没有删除灯具。');
-  await page.getByRole('button', { name: '撤销', exact: true }).click();
-  await page.waitForTimeout(120);
-  if (await existing.count() !== initialCount) throw new Error('Delete 删除灯具没有进入 Undo 历史。');
-
+  // Add a physical area light, then prove it can be re-selected and operated only from the viewport.
   await page.locator('[data-light-preset="key-area"]').click();
   await page.locator('.director-selected-light').filter({ hasText: '主光 1' }).waitFor();
   if (await existing.count() !== initialCount + 1) throw new Error('一键加入主光后，镜头灯具数量没有增加。');
@@ -107,16 +97,27 @@ try {
   const afterBackZ = Number(await inspectorNumbers.nth(4).inputValue());
   if (Math.abs(afterBackZ - beforeBackZ) < 0.5) throw new Error('“后”方向快捷布光没有真正改变灯具位置。');
 
-  // Prove the newly added area light can be re-selected from the viewport after another object is selected.
   const areaPosition = {
     x: Number(await inspectorNumbers.nth(2).inputValue()),
     y: Number(await inspectorNumbers.nth(3).inputValue()),
     z: Number(await inspectorNumbers.nth(4).inputValue()),
   };
-  await clickWorld({ x: -1.3, y: 1.0, z: 0 });
+  await clickWorld({ x: -1.3, y: 1.45, z: 0 });
   await clickWorld(areaPosition);
   await page.locator('.director-selected-light').filter({ hasText: '主光 1' }).waitFor();
+  await page.keyboard.press('e');
+  if (!(await page.getByRole('button', { name: '旋转 E', exact: true }).evaluate((node) => node.classList.contains('active')))) throw new Error('可定向灯具按 E 后没有进入灯头旋转模式。');
 
+  await page.keyboard.press('Delete');
+  await page.waitForTimeout(120);
+  if (await existing.count() !== initialCount) throw new Error('直接选中灯具后 Delete 没有删除灯具。');
+  await page.getByRole('button', { name: '撤销', exact: true }).click();
+  await page.waitForTimeout(120);
+  if (await existing.count() !== initialCount + 1) throw new Error('Delete 删除灯具没有进入 Undo 历史。');
+
+  // Undo restores the object; reselect it from 3D before continuing.
+  await clickWorld(areaPosition);
+  await page.locator('.director-selected-light').filter({ hasText: '主光 1' }).waitFor();
   await page.getByRole('button', { name: '复制灯具', exact: true }).click();
   await page.locator('.director-selected-light').filter({ hasText: '主光 1 副本' }).waitFor();
   if (await existing.count() !== initialCount + 2) throw new Error('复制灯具没有生成独立灯具。');
