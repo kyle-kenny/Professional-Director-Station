@@ -70,7 +70,8 @@ export const projectSchema = z.object({
   coordinateConvention: z.object({ handedness: z.literal('right'), upAxis: z.literal('Y'), forwardAxis: z.literal('-Z'), linearUnit: z.literal('meter') }),
   sequences: z.array(sequenceSchema).min(1, 'A Project must contain at least one Sequence.'),
   assets: z.array(assetRefSchema),
-  customPoses: z.array(customPoseSchema).optional(),
+  /** Legacy pds-1 projects may omit customPoses; parsing normalizes them to one stable collection. */
+  customPoses: z.array(customPoseSchema).default([]),
   collaboration: projectCollaborationStateSchema,
   pipeline: pipelineConfigSchema,
   ai: aiProductionStateSchema,
