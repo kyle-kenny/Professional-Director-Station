@@ -22,7 +22,9 @@ export function resolveSceneEntityData(object?: THREE.Object3D | null): SceneEnt
   let current = object ?? undefined;
   while (current) {
     const data = current.userData as SceneEntityData;
-    if (data.actorId || data.lightId || data.cameraId || data.cameraKeyframeId || data.rigJointId || data.rigControlId) return data;
+    const hiddenRigControl = current.visible === false && Boolean(data.rigJointId || data.rigControlId);
+    if (hiddenRigControl && data.actorId) return { actorId: data.actorId };
+    if (!hiddenRigControl && (data.actorId || data.lightId || data.cameraId || data.cameraKeyframeId || data.rigJointId || data.rigControlId)) return data;
     current = current.parent ?? undefined;
   }
   return {};
