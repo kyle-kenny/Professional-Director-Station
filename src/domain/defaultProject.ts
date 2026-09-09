@@ -9,6 +9,7 @@ export const createDefaultProject = (): DirectorProject => ({
   name: 'Professional Director Station — Demo',
   coordinateConvention: { handedness: 'right', upAxis: 'Y', forwardAxis: '-Z', linearUnit: 'meter' },
   assets: [],
+  customPoses: [],
   collaboration: {
     revision: 0,
     members: [{ userId: 'local-owner', displayName: 'Local Director', role: 'owner', department: 'direction', active: true }],
