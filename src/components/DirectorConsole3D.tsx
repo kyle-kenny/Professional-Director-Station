@@ -1,7 +1,7 @@
 import { DirectorViewport } from '../engine/DirectorViewport';
-import { directorLightToolPresets } from '../domain/directorLights';
+import { directorLightDirectionPresets, directorLightToolPresets } from '../domain/directorLights';
 import { useDirectorStore } from '../store/directorStore';
-import { addDirectorLight, aimDirectorLightAtStage, duplicateDirectorLight, removeDirectorLight } from '../store/lightRegistry';
+import { addDirectorLight, aimDirectorLightAtStage, duplicateDirectorLight, removeDirectorLight, setDirectorLightDirection } from '../store/lightRegistry';
 
 const lightTypeZh = { directional: '平行光', point: '点光', spot: '聚光灯', area: '区域光', ambient: '环境光' } as const;
 
@@ -55,6 +55,10 @@ export function DirectorConsole3D() {
           <div><b>{selectedLight.name}</b><span>{lightTypeZh[selectedLight.type]} · {selectedLight.intensity.toFixed(2)} · {Math.round(selectedLight.colorTemperatureK)}K · {selectedLight.castShadow ? '阴影开' : '阴影关'}</span></div>
         </div>
         <div className="director-selected-light-actions">
+          {selectedLight.type !== 'ambient' && <div className="director-light-directions" aria-label="快速打光方向">
+            <span>方向</span>
+            {directorLightDirectionPresets.map((direction) => <button key={direction.id} disabled={!editable} data-light-direction={direction.id} onClick={() => setDirectorLightDirection(selectedLight.id, direction.id)}>{direction.label}</button>)}
+          </div>}
           {selectedLight.type !== 'point' && selectedLight.type !== 'ambient' && <button disabled={!editable} onClick={() => aimDirectorLightAtStage(selectedLight.id)}>瞄准人物中心</button>}
           <button disabled={!editable} onClick={() => addLightKeyframe(selectedLight.id)}>当前帧关键帧</button>
           <button disabled={!editable} onClick={() => duplicateDirectorLight(selectedLight.id)}>复制灯具</button>
