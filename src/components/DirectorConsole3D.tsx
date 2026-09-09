@@ -8,8 +8,16 @@ import type { Vec3 } from '../domain/model';
 
 const lightTypeZh = { directional: '平行光', point: '点光', spot: '聚光灯', area: '区域光', ambient: '环境光' } as const;
 
-function distanceBetween(a: Vec3, b: Vec3) {
-  return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+function focusPlaneDistance(cameraPosition: Vec3, cameraTarget: Vec3, point: Vec3) {
+  const fx = cameraTarget.x - cameraPosition.x;
+  const fy = cameraTarget.y - cameraPosition.y;
+  const fz = cameraTarget.z - cameraPosition.z;
+  const forwardLength = Math.hypot(fx, fy, fz);
+  if (forwardLength <= 1e-9) return Math.hypot(point.x - cameraPosition.x, point.y - cameraPosition.y, point.z - cameraPosition.z);
+  const px = point.x - cameraPosition.x;
+  const py = point.y - cameraPosition.y;
+  const pz = point.z - cameraPosition.z;
+  return Math.max(0.01, (px * fx + py * fy + pz * fz) / forwardLength);
 }
 
 function formatDistanceM(value: number) {
@@ -36,14 +44,14 @@ export function DirectorConsole3D() {
   const depthOfField = cameraDepthOfField(camera, shot.frameAspect);
   const horizontalFovDeg = focalLengthToHorizontalFovDeg(camera.focalLengthMm, camera.sensorWidthMm);
   const verticalFovDeg = focalLengthToVerticalFovDeg(camera.focalLengthMm, camera.sensorWidthMm, shot.frameAspect);
-  const targetDistanceM = distanceBetween(camera.position, camera.target);
+  const targetDistanceM = focusPlaneDistance(camera.position, camera.target, camera.target);
   const actorTransform = selectedActor ? sampleActorTransform(selectedActor, playhead) : undefined;
   const selectedActorEye = selectedActor && actorTransform ? {
     x: actorTransform.position.x,
     y: actorTransform.position.y + selectedActor.eyeHeight * actorTransform.scale.y,
     z: actorTransform.position.z,
   } : undefined;
-  const selectedActorDistanceM = selectedActorEye ? distanceBetween(camera.position, selectedActorEye) : undefined;
+  const selectedActorDistanceM = selectedActorEye ? focusPlaneDistance(camera.position, camera.target, selectedActorEye) : undefined;
   const editable = shot.status !== 'APPROVED';
 
   const setFocus = (distanceM: number) => updateCamera('focusDistanceM', clampFocusDistance(distanceM));
@@ -72,7 +80,7 @@ export function DirectorConsole3D() {
         <button disabled={!editable || selectedActorDistanceM === undefined} onClick={() => selectedActorDistanceM !== undefined && setFocus(selectedActorDistanceM)}>对焦选中人物</button>
         <button disabled={!editable || !Number.isFinite(depthOfField.hyperfocalM)} onClick={() => setFocus(depthOfField.hyperfocalM)}>超焦距</button>
       </div>
-      <div className="director-camera-optics-note">传感器 {camera.sensorWidthMm.toFixed(1)} × {depthOfField.sensorHeightMm.toFixed(1)} mm · CoC {depthOfField.circleOfConfusionMm.toFixed(3)} mm{selectedActorDistanceM !== undefined ? ` · 人物眼位 ${formatDistanceM(selectedActorDistanceM)}` : ''}</div>
+      <div className="director-camera-optics-note">传感器 {camera.sensorWidthMm.toFixed(1)} × {depthOfField.sensorHeightMm.toFixed(1)} mm · CoC {depthOfField.circleOfConfusionMm.toFixed(3)} mm{selectedActorDistanceM !== undefined ? ` · 人物焦平面 ${formatDistanceM(selectedActorDistanceM)}` : ''}</div>
     </section>
 
     <div className="director-light-dock" aria-label="灯光台">
