@@ -22,8 +22,18 @@ const shadowSupported = (light: DirectorLight) => light.type === 'directional' |
 const intensityLabel = (light: DirectorLight) => light.type === 'point' || light.type === 'spot' ? '强度（坎德拉 cd）' : light.type === 'area' ? '强度（尼特 nit）' : '强度（相对值）';
 const ageGroupZh = { child: '儿童', teen: '青少年', adult: '成年', elderly: '老年' } as const;
 const lightTypeZh = { directional: '平行光', point: '点光', spot: '聚光灯', area: '区域光', ambient: '环境光' } as const;
-const actionZh: Record<string, string> = { idle: '静止', dialogue: '对话', hold: '保持', point: '指向', guard: '警戒', crouch: '蹲伏', sit: '坐姿', walk: '行走', 'walk-forward': '向前行走', retreat: '后退', 'cross-left': '向左横穿', 'cross-right': '向右横穿', 'pose-edit': '调姿编辑' };
+const poseCategories = ['站立', '移动', '坐蹲', '跳跃', '武器/动作', '互动'] as const;
+const actionZh: Record<string, string> = {
+  idle: '静止', relaxed: '放松站立', attention: '正式站立', dialogue: '对话', hold: '保持', point: '指向', guard: '警戒',
+  crouch: '半蹲', squat: '深蹲', sit: '坐姿', 'sit-relaxed': '放松坐姿', 'stand-up': '起立', kneel: '跪姿',
+  walk: '行走', stroll: '散步', run: '跑步', 'sprint-start': '冲刺起跑',
+  'jump-ready': '起跳准备', jump: '腾空跳跃', land: '落地缓冲',
+  'archery-ready': '持弓准备', 'archery-draw': '拉弓满弦', 'archery-release': '弓箭释放', 'weapon-guard': '武器警戒', 'two-hand-hold': '双手持物',
+  'reach-up': '向上伸手', 'pick-up': '拾取', push: '推', pull: '拉', punch: '直拳', kick: '前踢', carry: '怀抱/抱物',
+  'walk-forward': '向前行走', retreat: '后退', 'cross-left': '向左横穿', 'cross-right': '向右横穿', 'pose-edit': '调姿编辑',
+};
 const poseLabel = (id: string) => id.startsWith('custom:') ? '自定义姿势' : posePresetList.find((pose) => pose.id === id)?.label ?? '自定义姿势';
+const cameraKeyframeTime = (id?: string) => id?.startsWith('camera-keyframe:') ? Number(id.slice('camera-keyframe:'.length)) : undefined;
 
 export function Inspector() {
   const shot = useDirectorStore((s) => s.getActiveShot());
@@ -48,6 +58,7 @@ export function Inspector() {
   const lightAtTime = selectedLight ? sampleLight(selectedLight, playhead) : undefined;
   const actorTransform = actor ? sampleActorTransform(actor, playhead) : undefined;
   const camera = sampleCamera(shot.camera, playhead);
+  const selectedCameraKeyframeTime = cameraKeyframeTime(selected);
   const editable = shot.status !== 'APPROVED';
 
   const edit = (field: keyof Transform, axis: keyof Vec3, value: number) => editTransform(actor!.id, field, axis, value);
@@ -75,8 +86,12 @@ export function Inspector() {
         {axes.map((axis) => <NumberField disabled={!editable} key={`p-${axis}`} label={`位置 ${axis.toUpperCase()}（米）`} value={actorTransform.position[axis]} onChange={(v) => edit('position', axis, v)} />)}
         {axes.map((axis) => <NumberField disabled={!editable} key={`r-${axis}`} label={`整体旋转 ${axis.toUpperCase()}（°）`} value={radToDeg(actorTransform.rotation[axis])} step={1} onChange={(v) => edit('rotation', axis, degToRad(v))} />)}
         {axes.map((axis) => <NumberField disabled={!editable} key={`s-${axis}`} label={`整体缩放 ${axis.toUpperCase()}`} value={actorTransform.scale[axis]} step={0.05} onChange={(v) => edit('scale', axis, v)} />)}
-        <div className="section-title">姿势预设</div>
-        <select disabled={!editable} value={actor.pose.startsWith('custom:') ? '' : actor.pose} onChange={(e) => applyPresetPose(actor.id, e.target.value as PosePresetId)}><option value="" disabled>自定义姿势</option>{posePresetList.map((pose) => <option key={pose.id} value={pose.id}>{pose.label}</option>)}</select>
+        <div className="section-title">姿势预设 · {posePresetList.length} 组</div>
+        <select disabled={!editable} value={actor.pose.startsWith('custom:') ? '' : actor.pose} onChange={(e) => applyPresetPose(actor.id, e.target.value as PosePresetId)}>
+          <option value="" disabled>自定义姿势</option>
+          {poseCategories.map((category) => <optgroup key={category} label={category}>{posePresetList.filter((pose) => pose.category === category).map((pose) => <option key={pose.id} value={pose.id}>{pose.label}</option>)}</optgroup>)}
+        </select>
+        <div className="meta">包含站立、散步、跑步、坐/蹲/起立、跪姿、跳跃，以及持弓准备/拉弓满弦/释放、双手持物、警戒、推拉、拳脚等导演常用动作。</div>
         <div className="section-title">运动路径</div>
         <select disabled={!editable} value={motion} onChange={(e) => setMotion(e.target.value as MotionPresetId)}>{motionPresetList.map((item) => <option key={item.id} value={item.id}>{item.label} · {item.distanceM.toFixed(1)} 米</option>)}</select>
         <button disabled={!editable} className="wide" onClick={() => applyMotion(actor.id, motion)}>生成整镜头运动路径</button>
@@ -91,10 +106,15 @@ export function Inspector() {
       {lightAtTime.type !== 'ambient' && axes.map((axis) => <NumberField disabled={!editable} key={`lp-${axis}`} label={`位置 ${axis.toUpperCase()}（米）`} value={lightAtTime.position[axis]} onChange={(v) => updateLightVector(selectedLight.id, 'position', axis, v)} />)}
       {lightAtTime.type !== 'ambient' && axes.map((axis) => <NumberField disabled={!editable} key={`lt-${axis}`} label={`目标 ${axis.toUpperCase()}（米）`} value={(lightAtTime.target ?? { x: 0, y: 1.2, z: 0 })[axis]} onChange={(v) => updateLightVector(selectedLight.id, 'target', axis, v)} />)}
       <label className="toggle-field"><span>投射阴影</span><input type="checkbox" disabled={!editable || !shadowSupported(lightAtTime)} checked={shadowSupported(lightAtTime) && selectedLight.castShadow} onChange={(e) => setLightShadow(selectedLight.id, e.target.checked)} /></label>
-      <div className="meta">类型：{lightTypeZh[selectedLight.type]} · 关键帧：{selectedLight.path.length} · {shadowSupported(lightAtTime) ? '该灯型支持实时阴影。' : '该灯型在当前 Three.js WebGL 路径不支持实时阴影。'} 有关键帧轨时，数值/操纵器编辑自动写当前整帧。</div>
+      <div className="meta">类型：{lightTypeZh[selectedLight.type]} · 关键帧：{selectedLight.path.length} · {shadowSupported(lightAtTime) ? '该灯型支持实时阴影。' : '该灯型在当前 Three.js WebGL 路径不支持实时阴影。'} 有关键帧轨时，数值/操纵器编辑自动写当前整帧。聚光/区域/平行光可在 3D 里按 E 直接旋转灯头。</div>
+    </section>}
+    {selectedCameraKeyframeTime !== undefined && Number.isFinite(selectedCameraKeyframeTime) && <section>
+      <div className="section-title">当前选中机位</div>
+      <strong>{selectedCameraKeyframeTime.toFixed(2)} 秒</strong>
+      <div className="meta">这是摄影机动画的实体机位：W 移动 · E 旋转 · Delete 删除。主摄影机位置会按时间线在各机位之间插值。</div>
     </section>}
     <section>
-      <div className="section-title">摄影机 · {shot.camera.path.length} 个关键帧</div>
+      <div className="section-title">摄影机 · {shot.camera.path.length} 个机位 / 关键帧</div>
       <NumberField disabled={!editable} label="焦距（毫米）" value={camera.focalLengthMm} step={1} onChange={(v) => cam('focalLengthMm', v)} />
       <NumberField disabled={!editable} label="传感器宽度（毫米）" value={camera.sensorWidthMm} step={0.1} onChange={setActiveShotSensorWidthMm} />
       <select disabled={!editable} value="" onChange={(e) => { if (e.target.value) cam('focalLengthMm', Number(e.target.value)); }}><option value="">焦段预设…</option>{lensPresetList.map((lens) => <option key={lens.id} value={lens.focalLengthMm}>{lens.label} · {lens.use}</option>)}</select>
@@ -102,7 +122,7 @@ export function Inspector() {
       <NumberField disabled={!editable} label="对焦距离（米）" value={camera.focusDistanceM} step={0.1} onChange={(v) => cam('focusDistanceM', v)} />
       {axes.map((axis) => <NumberField disabled={!editable} key={`cp-${axis}`} label={`摄影机 ${axis.toUpperCase()}（米）`} value={camera.position[axis]} onChange={(v) => camVec('position', axis, v)} />)}
       {axes.map((axis) => <NumberField disabled={!editable} key={`ct-${axis}`} label={`目标 ${axis.toUpperCase()}（米）`} value={camera.target[axis]} onChange={(v) => camVec('target', axis, v)} />)}
-      <div className="meta">预演视口使用真实 filmback / focal 几何；f-stop / 对焦距离作为镜头元数据保留，当前 WebGL 预演不模拟最终景深。</div>
+      <div className="meta">可直接点击 3D 摄影机实体：W 移动，E 旋转镜头方向。预演视口使用真实 filmback / focal 几何；f-stop / 对焦距离作为镜头元数据保留，当前 WebGL 预演不模拟最终景深。</div>
     </section>
     <section>
       <div className="section-title">灯光 / 曝光</div>
