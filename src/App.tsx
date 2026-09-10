@@ -1,5 +1,6 @@
 import { lazy, Suspense } from 'react';
 import { Inspector } from './components/Inspector';
+import { SelectionInspector } from './components/SelectionInspector';
 import { ProjectSidebar } from './components/ProjectSidebar';
 import { TopBar } from './components/TopBar';
 import { useDirectorStore } from './store/directorStore';
@@ -17,5 +18,5 @@ export default function App() {
   const mode = useDirectorStore((state) => state.mode);
   const approved = useDirectorStore((state) => state.getActiveShot().status === 'APPROVED');
   const assetMode = mode === 'assets';
-  return <div className="app"><TopBar/><div className={`workspace${assetMode ? ' assets-mode' : ''}${approved ? ' approved-readonly' : ''}`}><ProjectSidebar/><main className="stage"><Suspense fallback={<div className="stage-loading"><div className="brand-mark">PDS</div><span>正在加载工作区…</span></div>}>{mode === '3d' && <DirectorConsole3D/>}{mode === 'floorplan' && <FloorPlanCanvas/>}{mode === 'frame' && <DirectorFrameCanvas/>}{mode === 'timeline' && <TimelinePanel/>}{mode === 'assets' && <div className="asset-stage"><AssetLibraryPanel/></div>}{mode === 'review' && <ReviewWorkspace/>}{mode === 'pipeline' && <PipelineWorkspace/>}{mode === 'ai' && <AIWorkspace/>}</Suspense></main>{!assetMode && <Inspector/>}</div></div>;
+  return <div className="app"><TopBar/><div className={`workspace${assetMode ? ' assets-mode' : ''}${approved ? ' approved-readonly' : ''}`}><ProjectSidebar/><main className="stage"><Suspense fallback={<div className="stage-loading"><div className="brand-mark">PDS</div><span>正在加载工作区…</span></div>}>{mode === '3d' && <DirectorConsole3D/>}{mode === 'floorplan' && <FloorPlanCanvas/>}{mode === 'frame' && <DirectorFrameCanvas/>}{mode === 'timeline' && <TimelinePanel/>}{mode === 'assets' && <div className="asset-stage"><AssetLibraryPanel/></div>}{mode === 'review' && <ReviewWorkspace/>}{mode === 'pipeline' && <PipelineWorkspace/>}{mode === 'ai' && <AIWorkspace/>}</Suspense></main>{!assetMode && (mode === '3d' ? <SelectionInspector/> : <Inspector/>)}</div></div>;
 }
