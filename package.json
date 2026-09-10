@@ -1,7 +1,7 @@
 {
   "name": "professional-director-station",
   "private": true,
-  "version": "1.2.2",
+  "version": "1.2.3",
   "type": "module",
   "scripts": {
     "characters:install": "node scripts/install-character-assets.mjs",
