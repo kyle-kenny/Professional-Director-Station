@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { Actor } from '../domain/model';
 import { poseLibrary } from '../domain/poseLibrary';
+import { poseHandIkHeightRatios } from '../domain/poseIkLibrary';
 import {
   clampJointRotation,
   defaultHeadLookAt,
@@ -17,6 +18,7 @@ import {
 const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 const lerpVec = (a: RigVec3, b: RigVec3, t: number): RigVec3 => ({ x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t), z: lerp(a.z, b.z, t) });
+const scaleRigPoint = (point: RigVec3, scale: number): RigVec3 => ({ x: point.x * scale, y: point.y * scale, z: point.z * scale });
 
 function ease(value: number, easing: 'linear' | 'ease-in' | 'ease-out' | 'ease-in-out') {
   const t = clamp01(value);
@@ -53,6 +55,17 @@ export function presetRigForActor(actor: Actor): HumanoidRigState {
   for (const [joint, rotation] of map) if (rotation) rig.fk[joint] = clampJointRotation(joint, rotation);
   for (const [joint, rotation] of Object.entries(preset.rigRotations ?? {})) {
     if (rotation && humanoidJointIds.includes(joint as HumanoidJointId)) rig.fk[joint as HumanoidJointId] = clampJointRotation(joint as HumanoidJointId, rotation);
+  }
+  const handPlacements = poseHandIkHeightRatios[preset.id];
+  for (const limb of ['leftHand', 'rightHand'] as const) {
+    const placement = handPlacements?.[limb];
+    if (!placement) continue;
+    rig.ik[limb] = {
+      enabled: true,
+      locked: false,
+      target: scaleRigPoint(placement.targetHeightRatio, actor.demographics.heightM),
+      pole: scaleRigPoint(placement.poleHeightRatio, actor.demographics.heightM),
+    };
   }
   return rig;
 }
@@ -129,10 +142,10 @@ export function controlPosition(actor: Actor, rig: HumanoidRigState, control: Ri
 }
 
 export function jointDrivenByIk(rig: HumanoidRigState, joint: HumanoidJointId) {
-  if (['upperarm_l', 'lowerarm_l', 'hand_l'].includes(joint)) return rig.ik.leftHand.enabled;
-  if (['upperarm_r', 'lowerarm_r', 'hand_r'].includes(joint)) return rig.ik.rightHand.enabled;
-  if (['thigh_l', 'calf_l', 'foot_l'].includes(joint)) return rig.ik.leftFoot.enabled;
-  if (['thigh_r', 'calf_r', 'foot_r'].includes(joint)) return rig.ik.rightFoot.enabled;
+  if (['upperarm_l', 'lowerarm_l'].includes(joint)) return rig.ik.leftHand.enabled;
+  if (['upperarm_r', 'lowerarm_r'].includes(joint)) return rig.ik.rightHand.enabled;
+  if (['thigh_l', 'calf_l'].includes(joint)) return rig.ik.leftFoot.enabled;
+  if (['thigh_r', 'calf_r'].includes(joint)) return rig.ik.rightFoot.enabled;
   return false;
 }
 
