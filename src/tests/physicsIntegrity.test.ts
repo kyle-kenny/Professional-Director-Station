@@ -3,7 +3,7 @@ import { actorPresetList, createActorFromPreset } from '../domain/actorLibrary';
 import { createActorMotionPath, motionPresetList } from '../domain/actorMotions';
 import { lightingPresets } from '../domain/presets';
 import { correlatedColorTemperatureToSrgb } from '../utils/lightColor';
-import { cameraGroundFrustum, fitAspectRect, focalLengthToHorizontalFovDeg, focalLengthToVerticalFovDeg, projectWorldToFrame } from '../utils/math';
+import { cameraDepthOfField, cameraGroundFrustum, fitAspectRect, focalLengthToHorizontalFovDeg, focalLengthToVerticalFovDeg, projectWorldToFrame } from '../utils/math';
 import { createDefaultProject } from '../domain/defaultProject';
 import { projectSchema } from '../domain/model';
 
@@ -22,6 +22,25 @@ describe('release physics integrity', () => {
     expect(center.visible).toBe(true);
     expect(center.x).toBeCloseTo(0.5, 5);
     expect(center.y).toBeCloseTo(0.5, 5);
+  });
+
+  it('computes physically plausible depth of field from filmback, focal length, aperture and focus distance', () => {
+    const depth = cameraDepthOfField({ focalLengthMm: 50, sensorWidthMm: 36, aperture: 2.8, focusDistanceM: 3 }, 16 / 9);
+    expect(depth.validFocus).toBe(true);
+    expect(depth.sensorHeightMm).toBeCloseTo(20.25, 5);
+    expect(depth.circleOfConfusionMm).toBeCloseTo(0.02754, 4);
+    expect(depth.hyperfocalM).toBeCloseTo(32.47, 1);
+    expect(depth.nearM).toBeCloseTo(2.75, 2);
+    expect(depth.farM).toBeCloseTo(3.30, 2);
+  });
+
+  it('widens depth of field when stopping down and reaches infinity beyond the hyperfocal threshold', () => {
+    const shallow = cameraDepthOfField({ focalLengthMm: 50, sensorWidthMm: 36, aperture: 1.4, focusDistanceM: 3 }, 16 / 9);
+    const stoppedDown = cameraDepthOfField({ focalLengthMm: 50, sensorWidthMm: 36, aperture: 8, focusDistanceM: 3 }, 16 / 9);
+    expect(stoppedDown.nearM).toBeLessThan(shallow.nearM);
+    expect(stoppedDown.farM).toBeGreaterThan(shallow.farM);
+    const hyperfocalFocus = cameraDepthOfField({ focalLengthMm: 50, sensorWidthMm: 36, aperture: 8, focusDistanceM: stoppedDown.hyperfocalM }, 16 / 9);
+    expect(hyperfocalFocus.farM).toBe(Number.POSITIVE_INFINITY);
   });
 
   it('keeps shot framing stable when the UI container aspect changes', () => {
