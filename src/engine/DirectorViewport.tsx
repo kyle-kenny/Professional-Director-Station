@@ -34,11 +34,44 @@ import {
   syncLightEntity,
   targetFromMinusZEntity,
 } from './sceneEntities';
+import {
+  buildDirectorStructureGuides,
+  defaultDirectorGuideVisibility,
+  directorGuideDefinitions,
+  directorGuideIds,
+  disposeDirectorStructureGuide,
+  type DirectorGuideId,
+  type DirectorGuideVisibility,
+} from './directorGuides';
 import { uiZh } from '../i18n/zhCN';
+import '../director-guides.css';
 
 function directorLightColor(light: DirectorLight) {
   const cct = correlatedColorTemperatureToSrgb(light.colorTemperatureK);
   return new THREE.Color(cct.r, cct.g, cct.b).convertSRGBToLinear().multiply(new THREE.Color(light.color));
+}
+
+function environmentGroundColor(skyColor: THREE.Color) {
+  const neutralGround = new THREE.Color('#6f6258').convertSRGBToLinear();
+  return skyColor.clone().lerp(neutralGround, 0.62).multiplyScalar(0.42);
+}
+
+function configureShadow(light: THREE.Light) {
+  if (!(light instanceof THREE.DirectionalLight || light instanceof THREE.SpotLight || light instanceof THREE.PointLight)) return;
+  const mapSize = light instanceof THREE.PointLight ? 1024 : 2048;
+  light.shadow.mapSize.set(mapSize, mapSize);
+  light.shadow.bias = -0.00015;
+  light.shadow.normalBias = 0.018;
+  light.shadow.camera.near = 0.05;
+  light.shadow.camera.far = 80;
+  if (light instanceof THREE.DirectionalLight) {
+    const camera = light.shadow.camera as THREE.OrthographicCamera;
+    camera.left = -8;
+    camera.right = 8;
+    camera.top = 8;
+    camera.bottom = -8;
+  }
+  light.shadow.camera.updateProjectionMatrix();
 }
 
 function vectorDistance(a: Vec3, b?: Vec3, fallback = 3) {
@@ -68,6 +101,9 @@ type Runtime = {
   cameraEntity?: THREE.Group;
   cameraKeyframeObjects: Map<string, THREE.Group>;
   directorGuides: Set<THREE.Object3D>;
+  grid: THREE.GridHelper;
+  worldAxes: THREE.AxesHelper;
+  structureGuideRoot: THREE.Group;
   controls: OrbitControls;
   transform: TransformControls;
   content: THREE.Group;
@@ -158,9 +194,11 @@ export function DirectorViewport() {
   const mountRef = useRef<HTMLDivElement>(null);
   const runtime = useRef<Runtime | null>(null);
   const [viewMode, setViewMode] = useState<'director' | 'shot'>('director');
+  const [guideVisibility, setGuideVisibility] = useState<DirectorGuideVisibility>({ ...defaultDirectorGuideVisibility });
   const [characterLoad, setCharacterLoad] = useState<CharacterLoadState>({ loaded: 0, total: 0, failed: 0 });
   const [sceneNotice, setSceneNotice] = useState('');
   const viewModeRef = useRef(viewMode);
+  const guideVisibilityRef = useRef(guideVisibility);
   const shot = useDirectorStore((s) => s.getActiveShot());
   const shotAspectRef = useRef(shot.frameAspect);
   const playhead = useDirectorStore((s) => s.playhead);
@@ -192,7 +230,12 @@ export function DirectorViewport() {
     cameraPath: shot.camera.path.map((frame) => frame.time),
   }), [shot]);
 
+  const toggleGuide = (id: DirectorGuideId) => setGuideVisibility((current) => ({ ...current, [id]: !current[id] }));
+  const showCommonGuides = () => setGuideVisibility({ ...defaultDirectorGuideVisibility });
+  const hideAllGuides = () => setGuideVisibility(Object.fromEntries(directorGuideIds.map((id) => [id, false])) as DirectorGuideVisibility);
+
   useEffect(() => { viewModeRef.current = viewMode; }, [viewMode]);
+  useEffect(() => { guideVisibilityRef.current = guideVisibility; }, [guideVisibility]);
   useEffect(() => { shotAspectRef.current = shot.frameAspect; }, [shot.frameAspect]);
 
   useEffect(() => {
@@ -246,10 +289,21 @@ export function DirectorViewport() {
     transform.setSize(0.8);
     scene.add(transform.getHelper());
 
-    const grid = new THREE.GridHelper(20, 20, '#45515e', '#2a333d'); scene.add(grid);
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(20, 20), new THREE.MeshStandardMaterial({ color: '#20262d', roughness: 1 }));
-    floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; floor.position.y = -0.002; scene.add(floor);
-    const content = new THREE.Group(); scene.add(content);
+    const grid = new THREE.GridHelper(20, 20, '#45515e', '#2a333d');
+    scene.add(grid);
+    const worldAxes = new THREE.AxesHelper(2.5);
+    worldAxes.renderOrder = 24;
+    scene.add(worldAxes);
+    const structureGuideRoot = new THREE.Group();
+    structureGuideRoot.name = '导演结构辅助线';
+    scene.add(structureGuideRoot);
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(20, 20), new THREE.MeshStandardMaterial({ color: '#20262d', roughness: 0.96, metalness: 0 }));
+    floor.rotation.x = -Math.PI / 2;
+    floor.receiveShadow = true;
+    floor.position.y = -0.002;
+    scene.add(floor);
+    const content = new THREE.Group();
+    scene.add(content);
     const actorObjects = new Map<string, THREE.Group>();
     const characters = new Map<string, CharacterRuntime>();
     const lightObjects = new Map<string, THREE.Group>();
@@ -259,12 +313,18 @@ export function DirectorViewport() {
 
     function resize() {
       const w = host.clientWidth || 800, h = host.clientHeight || 500;
-      renderer.setSize(w, h, false); editorCamera.aspect = w / h; editorCamera.updateProjectionMatrix();
-      shotCamera.aspect = shotAspectRef.current; shotCamera.updateProjectionMatrix();
+      renderer.setSize(w, h, false);
+      editorCamera.aspect = w / h;
+      editorCamera.updateProjectionMatrix();
+      shotCamera.aspect = shotAspectRef.current;
+      shotCamera.updateProjectionMatrix();
     }
-    resize(); const ro = new ResizeObserver(resize); ro.observe(host);
+    resize();
+    const ro = new ResizeObserver(resize);
+    ro.observe(host);
 
-    const raycaster = new THREE.Raycaster(); const pointer = new THREE.Vector2();
+    const raycaster = new THREE.Raycaster();
+    const pointer = new THREE.Vector2();
     const onPointerDown = (ev: PointerEvent) => {
       if (transform.dragging) return;
       const rect = renderer.domElement.getBoundingClientRect();
@@ -272,9 +332,13 @@ export function DirectorViewport() {
       if (viewModeRef.current === 'shot') {
         const frame = fitAspectRect(rect.width, rect.height, shotAspectRef.current);
         if (localX < frame.x || localX > frame.x + frame.width || localY < frame.y || localY > frame.y + frame.height) return;
-        localX -= frame.x; localY -= frame.y; targetWidth = frame.width; targetHeight = frame.height;
+        localX -= frame.x;
+        localY -= frame.y;
+        targetWidth = frame.width;
+        targetHeight = frame.height;
       }
-      pointer.x = (localX / targetWidth) * 2 - 1; pointer.y = -(localY / targetHeight) * 2 + 1;
+      pointer.x = (localX / targetWidth) * 2 - 1;
+      pointer.y = -(localY / targetHeight) * 2 + 1;
       raycaster.setFromCamera(pointer, viewModeRef.current === 'shot' ? shotCamera : editorCamera);
       const hits = raycaster.intersectObjects(content.children, true);
       const poseHit = hits.find((hit) => {
@@ -282,7 +346,11 @@ export function DirectorViewport() {
         return data.rigControlId || data.rigJointId;
       });
       const object = (poseHit ?? hits[0])?.object;
-      if (!object) return;
+      if (!object) {
+        selectObject(undefined);
+        setSceneNotice('');
+        return;
+      }
       const data = resolveSceneEntityData(object);
       const actorId = data.actorId;
       const rigControlId = data.rigControlId as RigControlId | undefined;
@@ -354,7 +422,9 @@ export function DirectorViewport() {
           applyAdditiveJointRotationToBone(object, joint, limited);
           updateJointMarkersFromBones(character);
         }
-      } finally { applyingLiveRig = false; }
+      } finally {
+        applyingLiveRig = false;
+      }
     };
     transform.addEventListener('objectChange', onTransformPreview);
 
@@ -378,7 +448,11 @@ export function DirectorViewport() {
       }
       if (actorId && joint) { setActorJointRotation(actorId, joint, readAdditiveJointRotation(object, joint)); return; }
       if (actorId) {
-        useDirectorStore.getState().setActorTransform(actorId, { position: { x: object.position.x, y: object.position.y, z: object.position.z }, rotation: { x: object.rotation.x, y: object.rotation.y, z: object.rotation.z }, scale: { x: object.scale.x, y: object.scale.y, z: object.scale.z } });
+        useDirectorStore.getState().setActorTransform(actorId, {
+          position: { x: object.position.x, y: object.position.y, z: object.position.z },
+          rotation: { x: object.rotation.x, y: object.rotation.y, z: object.rotation.z },
+          scale: { x: object.scale.x, y: object.scale.y, z: object.scale.z },
+        });
         return;
       }
       if (data.lightId) {
@@ -413,95 +487,258 @@ export function DirectorViewport() {
     const animate = () => {
       controls.enabled = viewModeRef.current === 'director' && !transform.dragging;
       controls.update();
-      for (const guide of directorGuides) guide.visible = viewModeRef.current === 'director';
+      const inDirectorView = viewModeRef.current === 'director';
+      for (const guide of directorGuides) guide.visible = inDirectorView;
+      grid.visible = inDirectorView && guideVisibilityRef.current.grid;
+      worldAxes.visible = inDirectorView && guideVisibilityRef.current['world-axes'];
+      if (runtime.current?.cameraHelper) runtime.current.cameraHelper.visible = inDirectorView && guideVisibilityRef.current['camera-frustum'];
+      for (const child of structureGuideRoot.children) {
+        const id = child.userData.directorGuideId as DirectorGuideId | undefined;
+        child.visible = inDirectorView && Boolean(id && guideVisibilityRef.current[id]);
+      }
       const width = renderer.domElement.clientWidth || 1, height = renderer.domElement.clientHeight || 1;
-      renderer.setScissorTest(false); renderer.setViewport(0, 0, width, height); renderer.setClearColor(0x080b0f, 1); renderer.clear(true, true, true);
+      renderer.setScissorTest(false);
+      renderer.setViewport(0, 0, width, height);
+      renderer.setClearColor(0x080b0f, 1);
+      renderer.clear(true, true, true);
       if (viewModeRef.current === 'shot') {
-        const frame = fitAspectRect(width, height, shotAspectRef.current); const bottom = height - frame.y - frame.height;
-        renderer.setViewport(frame.x, bottom, frame.width, frame.height); renderer.setScissor(frame.x, bottom, frame.width, frame.height); renderer.setScissorTest(true); renderer.setClearColor(0x14181e, 1); renderer.clear(true, true, true); renderer.render(scene, shotCamera); renderer.setScissorTest(false);
-      } else { renderer.setClearColor(0x14181e, 1); renderer.clear(true, true, true); renderer.render(scene, editorCamera); }
+        const frame = fitAspectRect(width, height, shotAspectRef.current);
+        const bottom = height - frame.y - frame.height;
+        renderer.setViewport(frame.x, bottom, frame.width, frame.height);
+        renderer.setScissor(frame.x, bottom, frame.width, frame.height);
+        renderer.setScissorTest(true);
+        renderer.setClearColor(0x14181e, 1);
+        renderer.clear(true, true, true);
+        renderer.render(scene, shotCamera);
+        renderer.setScissorTest(false);
+      } else {
+        renderer.setClearColor(0x14181e, 1);
+        renderer.clear(true, true, true);
+        renderer.render(scene, editorCamera);
+      }
       raf = requestAnimationFrame(animate);
     };
     animate();
-    runtime.current = { scene, renderer, editorCamera, shotCamera, controls, transform, content, actorObjects, characters, lightObjects, lights, cameraKeyframeObjects, directorGuides, raf };
+    runtime.current = { scene, renderer, editorCamera, shotCamera, controls, transform, content, actorObjects, characters, lightObjects, lights, cameraKeyframeObjects, directorGuides, grid, worldAxes, structureGuideRoot, raf };
     return () => {
-      cancelAnimationFrame(raf); ro.disconnect(); renderer.domElement.removeEventListener('pointerdown', onPointerDown); transform.removeEventListener('objectChange', onTransformPreview); transform.removeEventListener('mouseUp', onTransformEnd); transform.detach(); transform.dispose(); controls.dispose(); disposeSceneContent(content); floor.geometry.dispose(); (floor.material as THREE.Material).dispose(); renderer.dispose(); if (host.contains(renderer.domElement)) host.removeChild(renderer.domElement); runtime.current = null;
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+      renderer.domElement.removeEventListener('pointerdown', onPointerDown);
+      transform.removeEventListener('objectChange', onTransformPreview);
+      transform.removeEventListener('mouseUp', onTransformEnd);
+      transform.detach();
+      transform.dispose();
+      controls.dispose();
+      disposeSceneContent(content);
+      for (const child of [...structureGuideRoot.children]) disposeDirectorStructureGuide(child);
+      grid.geometry.dispose();
+      const gridMaterials = Array.isArray(grid.material) ? grid.material : [grid.material];
+      gridMaterials.forEach((material) => material.dispose());
+      worldAxes.geometry.dispose();
+      const axesMaterials = Array.isArray(worldAxes.material) ? worldAxes.material : [worldAxes.material];
+      axesMaterials.forEach((material) => material.dispose());
+      floor.geometry.dispose();
+      (floor.material as THREE.Material).dispose();
+      renderer.dispose();
+      if (host.contains(renderer.domElement)) host.removeChild(renderer.domElement);
+      runtime.current = null;
     };
   }, [selectObject, selectRigControl, selectRigJoint]);
 
   useEffect(() => {
-    const r = runtime.current; if (!r) return;
+    const r = runtime.current;
+    if (!r) return;
     let cancelled = false;
-    r.transform.detach(); disposeSceneContent(r.content); r.content.clear(); r.actorObjects.clear(); r.characters.clear(); r.lightObjects.clear(); r.lights.clear(); r.cameraKeyframeObjects.clear(); r.directorGuides.clear(); r.cameraHelper = undefined; r.cameraEntity = undefined;
+    r.transform.detach();
+    disposeSceneContent(r.content);
+    r.content.clear();
+    r.actorObjects.clear();
+    r.characters.clear();
+    r.lightObjects.clear();
+    r.lights.clear();
+    r.cameraKeyframeObjects.clear();
+    r.directorGuides.clear();
+    r.cameraHelper = undefined;
+    r.cameraEntity = undefined;
     const currentShot = useDirectorStore.getState().getActiveShot();
     const time = useDirectorStore.getState().playhead;
     setCharacterLoad({ loaded: 0, total: currentShot.actors.length, failed: 0 });
     for (const actor of currentShot.actors) {
-      const anchor = new THREE.Group(); anchor.name = actor.name; anchor.userData.actorId = actor.id;
-      const transformAtTime = sampleActorTransform(actor, time); anchor.position.set(transformAtTime.position.x, transformAtTime.position.y, transformAtTime.position.z); anchor.rotation.set(transformAtTime.rotation.x, transformAtTime.rotation.y, transformAtTime.rotation.z); anchor.scale.set(transformAtTime.scale.x, transformAtTime.scale.y, transformAtTime.scale.z);
-      r.content.add(anchor); r.actorObjects.set(actor.id, anchor);
-      const character: CharacterRuntime = { actorId: actor.id, anchor, jointMarkers: new Map(), controlMarkers: new Map() }; r.characters.set(actor.id, character);
+      const anchor = new THREE.Group();
+      anchor.name = actor.name;
+      anchor.userData.actorId = actor.id;
+      const transformAtTime = sampleActorTransform(actor, time);
+      anchor.position.set(transformAtTime.position.x, transformAtTime.position.y, transformAtTime.position.z);
+      anchor.rotation.set(transformAtTime.rotation.x, transformAtTime.rotation.y, transformAtTime.rotation.z);
+      anchor.scale.set(transformAtTime.scale.x, transformAtTime.scale.y, transformAtTime.scale.z);
+      r.content.add(anchor);
+      r.actorObjects.set(actor.id, anchor);
+      const character: CharacterRuntime = { actorId: actor.id, anchor, jointMarkers: new Map(), controlMarkers: new Map() };
+      r.characters.set(actor.id, character);
       void instantiateDirectorCharacter(actor).then(({ root }) => {
         if (cancelled || runtime.current !== r || r.actorObjects.get(actor.id) !== anchor) { disposeSceneContent(root); return; }
-        character.root = root; anchor.add(root); applyActorRigAtTime(root, actor, useDirectorStore.getState().playhead); installRigMarkers(character, actor); updateRigMarkers(character, actor, usePoseUiStore.getState().enabled && usePoseUiStore.getState().actorId === actor.id, usePoseUiStore.getState().selectedControl, usePoseUiStore.getState().selectedJoint); setCharacterLoad((state) => ({ ...state, loaded: state.loaded + 1 }));
-      }).catch((error) => { console.error(`角色 ${actor.name} 加载失败`, error); if (!cancelled) setCharacterLoad((state) => ({ ...state, failed: state.failed + 1 })); });
+        character.root = root;
+        anchor.add(root);
+        applyActorRigAtTime(root, actor, useDirectorStore.getState().playhead);
+        installRigMarkers(character, actor);
+        updateRigMarkers(character, actor, usePoseUiStore.getState().enabled && usePoseUiStore.getState().actorId === actor.id, usePoseUiStore.getState().selectedControl, usePoseUiStore.getState().selectedJoint);
+        setCharacterLoad((state) => ({ ...state, loaded: state.loaded + 1 }));
+      }).catch((error) => {
+        console.error(`角色 ${actor.name} 加载失败`, error);
+        if (!cancelled) setCharacterLoad((state) => ({ ...state, failed: state.failed + 1 }));
+      });
     }
 
     for (const source of currentShot.lights) {
-      const l = sampleLight(source, time); const color = directorLightColor(l); let light: THREE.Light; let target: THREE.Object3D | undefined;
-      if (l.type === 'ambient') light = new THREE.AmbientLight(color, l.intensity);
+      const l = sampleLight(source, time);
+      const color = directorLightColor(l);
+      let light: THREE.Light;
+      let target: THREE.Object3D | undefined;
+      if (l.type === 'ambient') light = new THREE.HemisphereLight(color, environmentGroundColor(color), l.intensity);
       else if (l.type === 'point') light = new THREE.PointLight(color, l.intensity, 0, 2);
-      else if (l.type === 'spot') { const spot = new THREE.SpotLight(color, l.intensity, 0, Math.PI / 5, 0.4, 2); target = spot.target; target.position.set(l.target?.x ?? 0, l.target?.y ?? 1, l.target?.z ?? 0); r.content.add(target); light = spot; }
-      else if (l.type === 'area') light = new THREE.RectAreaLight(color, l.intensity, 2, 1);
-      else { const directional = new THREE.DirectionalLight(color, l.intensity); target = directional.target; target.position.set(l.target?.x ?? 0, l.target?.y ?? 1, l.target?.z ?? 0); r.content.add(target); light = directional; }
-      light.position.set(l.position.x, l.position.y, l.position.z); if (l.type === 'area' && l.target) light.lookAt(l.target.x, l.target.y, l.target.z); light.castShadow = l.type !== 'area' && l.type !== 'ambient' && l.castShadow; r.content.add(light);
-      const entity = buildLightEntity(l, color); syncLightEntity(entity, l, color); r.content.add(entity); r.lightObjects.set(source.id, entity); r.directorGuides.add(entity); r.lights.set(source.id, { light, entity, target });
+      else if (l.type === 'spot') {
+        const spot = new THREE.SpotLight(color, l.intensity, 0, Math.PI / 5, 0.55, 2);
+        target = spot.target;
+        target.position.set(l.target?.x ?? 0, l.target?.y ?? 1, l.target?.z ?? 0);
+        r.content.add(target);
+        light = spot;
+      } else if (l.type === 'area') light = new THREE.RectAreaLight(color, l.intensity, 2.4, 1.4);
+      else {
+        const directional = new THREE.DirectionalLight(color, l.intensity);
+        target = directional.target;
+        target.position.set(l.target?.x ?? 0, l.target?.y ?? 1, l.target?.z ?? 0);
+        r.content.add(target);
+        light = directional;
+      }
+      light.position.set(l.position.x, l.position.y, l.position.z);
+      if (l.type === 'area' && l.target) light.lookAt(l.target.x, l.target.y, l.target.z);
+      light.castShadow = l.type !== 'area' && l.type !== 'ambient' && l.castShadow;
+      configureShadow(light);
+      r.content.add(light);
+      const entity = buildLightEntity(l, color);
+      syncLightEntity(entity, l, color);
+      r.content.add(entity);
+      r.lightObjects.set(source.id, entity);
+      r.directorGuides.add(entity);
+      r.lights.set(source.id, { light, entity, target });
     }
 
     const cameraAtTime = sampleCamera(currentShot.camera, time);
-    r.shotCamera.aspect = currentShot.frameAspect; r.shotCamera.fov = focalLengthToVerticalFovDeg(cameraAtTime.focalLengthMm, cameraAtTime.sensorWidthMm, currentShot.frameAspect); r.shotCamera.position.set(cameraAtTime.position.x, cameraAtTime.position.y, cameraAtTime.position.z); r.shotCamera.lookAt(cameraAtTime.target.x, cameraAtTime.target.y, cameraAtTime.target.z); r.shotCamera.updateProjectionMatrix();
-    const helper = new THREE.CameraHelper(r.shotCamera); helper.userData.cameraId = currentShot.camera.id; r.cameraHelper = helper; r.content.add(helper); r.directorGuides.add(helper);
-    const cameraEntity = buildCameraEntity({ id: currentShot.camera.id, name: `摄影机实体 · ${currentShot.camera.name}` }); syncCameraEntity(cameraEntity, cameraAtTime); r.content.add(cameraEntity); r.cameraEntity = cameraEntity; r.directorGuides.add(cameraEntity);
+    r.shotCamera.aspect = currentShot.frameAspect;
+    r.shotCamera.fov = focalLengthToVerticalFovDeg(cameraAtTime.focalLengthMm, cameraAtTime.sensorWidthMm, currentShot.frameAspect);
+    r.shotCamera.position.set(cameraAtTime.position.x, cameraAtTime.position.y, cameraAtTime.position.z);
+    r.shotCamera.lookAt(cameraAtTime.target.x, cameraAtTime.target.y, cameraAtTime.target.z);
+    r.shotCamera.updateProjectionMatrix();
+    const helper = new THREE.CameraHelper(r.shotCamera);
+    helper.userData.cameraId = currentShot.camera.id;
+    r.cameraHelper = helper;
+    r.content.add(helper);
+    r.directorGuides.add(helper);
+    const cameraEntity = buildCameraEntity({ id: currentShot.camera.id, name: `摄影机实体 · ${currentShot.camera.name}` });
+    syncCameraEntity(cameraEntity, cameraAtTime);
+    r.content.add(cameraEntity);
+    r.cameraEntity = cameraEntity;
+    r.directorGuides.add(cameraEntity);
     for (const frame of currentShot.camera.path) {
       const id = cameraKeyframeSelectionId(frame.time);
-      const entity = buildCameraEntity({ id, name: `机位 · ${frame.time.toFixed(2)} 秒`, ghost: true, scale: 0.7 }); syncCameraEntity(entity, frame); r.content.add(entity); r.cameraKeyframeObjects.set(id, entity); r.directorGuides.add(entity);
+      const entity = buildCameraEntity({ id, name: `机位 · ${frame.time.toFixed(2)} 秒`, ghost: true, scale: 0.7 });
+      syncCameraEntity(entity, frame);
+      r.content.add(entity);
+      r.cameraKeyframeObjects.set(id, entity);
+      r.directorGuides.add(entity);
     }
     return () => { cancelled = true; };
   }, [structureKey]);
 
   useEffect(() => {
-    const r = runtime.current; if (!r) return;
+    const r = runtime.current;
+    if (!r) return;
+    for (const child of [...r.structureGuideRoot.children]) {
+      r.structureGuideRoot.remove(child);
+      disposeDirectorStructureGuide(child);
+    }
+    const guides = buildDirectorStructureGuides(shot, playhead);
+    for (const group of guides.values()) r.structureGuideRoot.add(group);
+  }, [playhead, shot]);
+
+  useEffect(() => {
+    const r = runtime.current;
+    if (!r) return;
     r.renderer.toneMappingExposure = Math.pow(2, shot.exposureEv);
     for (const actor of shot.actors) {
-      const character = r.characters.get(actor.id); if (!character) continue;
-      const transformAtTime = sampleActorTransform(actor, playhead); character.anchor.position.set(transformAtTime.position.x, transformAtTime.position.y, transformAtTime.position.z); character.anchor.rotation.set(transformAtTime.rotation.x, transformAtTime.rotation.y, transformAtTime.rotation.z); character.anchor.scale.set(transformAtTime.scale.x, transformAtTime.scale.y, transformAtTime.scale.z);
+      const character = r.characters.get(actor.id);
+      if (!character) continue;
+      const transformAtTime = sampleActorTransform(actor, playhead);
+      character.anchor.position.set(transformAtTime.position.x, transformAtTime.position.y, transformAtTime.position.z);
+      character.anchor.rotation.set(transformAtTime.rotation.x, transformAtTime.rotation.y, transformAtTime.rotation.z);
+      character.anchor.scale.set(transformAtTime.scale.x, transformAtTime.scale.y, transformAtTime.scale.z);
       if (character.root) applyActorRigAtTime(character.root, actor, playhead);
       updateRigMarkers(character, actor, poseEnabled && poseActorId === actor.id && viewMode === 'director', selectedControl, selectedJoint);
     }
     for (const source of shot.lights) {
-      const item = r.lights.get(source.id); if (!item) continue; const l = sampleLight(source, playhead); const color = directorLightColor(l); item.light.color.copy(color); item.light.intensity = l.intensity; item.light.position.set(l.position.x, l.position.y, l.position.z); item.light.castShadow = l.type !== 'area' && l.type !== 'ambient' && l.castShadow; if (item.target) item.target.position.set(l.target?.x ?? 0, l.target?.y ?? 1, l.target?.z ?? 0); if (l.type === 'area' && l.target) item.light.lookAt(l.target.x, l.target.y, l.target.z); syncLightEntity(item.entity, l, color); setSceneEntitySelected(item.entity, selectedObjectId === source.id);
+      const item = r.lights.get(source.id);
+      if (!item) continue;
+      const l = sampleLight(source, playhead);
+      const color = directorLightColor(l);
+      item.light.color.copy(color);
+      if (item.light instanceof THREE.HemisphereLight) item.light.groundColor.copy(environmentGroundColor(color));
+      item.light.intensity = l.intensity;
+      item.light.position.set(l.position.x, l.position.y, l.position.z);
+      item.light.castShadow = l.type !== 'area' && l.type !== 'ambient' && l.castShadow;
+      if (item.target) item.target.position.set(l.target?.x ?? 0, l.target?.y ?? 1, l.target?.z ?? 0);
+      if (l.type === 'area' && l.target) item.light.lookAt(l.target.x, l.target.y, l.target.z);
+      syncLightEntity(item.entity, l, color);
+      setSceneEntitySelected(item.entity, selectedObjectId === source.id);
     }
-    const cameraAtTime = sampleCamera(shot.camera, playhead); r.shotCamera.aspect = shot.frameAspect; r.shotCamera.fov = focalLengthToVerticalFovDeg(cameraAtTime.focalLengthMm, cameraAtTime.sensorWidthMm, shot.frameAspect); r.shotCamera.position.set(cameraAtTime.position.x, cameraAtTime.position.y, cameraAtTime.position.z); r.shotCamera.lookAt(cameraAtTime.target.x, cameraAtTime.target.y, cameraAtTime.target.z); r.shotCamera.updateProjectionMatrix(); r.cameraHelper?.update();
+    const cameraAtTime = sampleCamera(shot.camera, playhead);
+    r.shotCamera.aspect = shot.frameAspect;
+    r.shotCamera.fov = focalLengthToVerticalFovDeg(cameraAtTime.focalLengthMm, cameraAtTime.sensorWidthMm, shot.frameAspect);
+    r.shotCamera.position.set(cameraAtTime.position.x, cameraAtTime.position.y, cameraAtTime.position.z);
+    r.shotCamera.lookAt(cameraAtTime.target.x, cameraAtTime.target.y, cameraAtTime.target.z);
+    r.shotCamera.updateProjectionMatrix();
+    r.cameraHelper?.update();
     if (r.cameraEntity) { syncCameraEntity(r.cameraEntity, cameraAtTime); setSceneEntitySelected(r.cameraEntity, selectedIsCamera); }
     for (const frame of shot.camera.path) {
-      const id = cameraKeyframeSelectionId(frame.time); const entity = r.cameraKeyframeObjects.get(id); if (!entity) continue; syncCameraEntity(entity, frame); setSceneEntitySelected(entity, selectedObjectId === id);
+      const id = cameraKeyframeSelectionId(frame.time);
+      const entity = r.cameraKeyframeObjects.get(id);
+      if (!entity) continue;
+      syncCameraEntity(entity, frame);
+      setSceneEntitySelected(entity, selectedObjectId === id);
     }
   }, [playhead, poseActorId, poseEnabled, selectedControl, selectedIsCamera, selectedJoint, selectedObjectId, shot, viewMode]);
 
   useEffect(() => {
-    const r = runtime.current; if (!r) return;
+    const r = runtime.current;
+    if (!r) return;
     r.transform.detach();
     if (viewMode !== 'director' || !shotEditable) return;
     if (poseEnabled && poseActorId) {
-      const character = r.characters.get(poseActorId); const actor = shot.actors.find((item) => item.id === poseActorId); if (!character || !actor) return;
+      const character = r.characters.get(poseActorId);
+      const actor = shot.actors.find((item) => item.id === poseActorId);
+      if (!character || !actor) return;
       const rig = sampleActorRig(actor, playhead);
       if (selectedControl) {
-        const marker = character.controlMarkers.get(selectedControl); const limb = rigControlToLimb(selectedControl); const locked = limb ? rig.ik[limb].locked : false;
-        if (marker && marker.visible && !locked) { r.transform.camera = r.editorCamera; r.transform.setMode('translate'); r.transform.setSpace('local'); r.transform.attach(marker); }
+        const marker = character.controlMarkers.get(selectedControl);
+        const limb = rigControlToLimb(selectedControl);
+        const locked = limb ? rig.ik[limb].locked : false;
+        if (marker && marker.visible && !locked) {
+          r.transform.camera = r.editorCamera;
+          r.transform.setMode('translate');
+          r.transform.setSpace('local');
+          r.transform.attach(marker);
+        }
         return;
       }
       if (selectedJoint && character.root && !jointDrivenByIk(rig, selectedJoint)) {
-        const bone = character.root.getObjectByName(selectedJoint); if (bone) { bone.userData.actorId = poseActorId; bone.userData.rigJointId = selectedJoint; r.transform.camera = r.editorCamera; r.transform.setMode('rotate'); r.transform.setSpace('local'); r.transform.attach(bone); }
+        const bone = character.root.getObjectByName(selectedJoint);
+        if (bone) {
+          bone.userData.actorId = poseActorId;
+          bone.userData.rigJointId = selectedJoint;
+          r.transform.camera = r.editorCamera;
+          r.transform.setMode('rotate');
+          r.transform.setSpace('local');
+          r.transform.attach(bone);
+        }
       }
       return;
     }
@@ -521,19 +758,39 @@ export function DirectorViewport() {
 
   const characterStatus = characterLoad.failed ? `开源角色：${characterLoad.loaded}/${characterLoad.total} 已加载 · ${characterLoad.failed} 个失败` : characterLoad.loaded === characterLoad.total && characterLoad.total > 0 ? `${uiZh.characterReady} · ${characterLoad.loaded}/${characterLoad.total} · Quaternius CC0` : `${uiZh.loadingCharacter} ${characterLoad.loaded}/${characterLoad.total}`;
   const rigSelection = selectedControl ? `控制器:${selectedControl}` : selectedJoint ? `关节:${selectedJoint}` : '无';
-  const objectHint = selectedIsCamera ? '摄影机实体 · W 移动 · E 旋转镜头方向 · 主摄影机受保护' : selectedIsCameraKeyframe ? '机位实体 · W 移动 · E 旋转 · Delete 删除' : selectedIsLight ? lightCanRotate(selectedLight) ? '灯具实体 · W 移动 · E 旋转灯头 · Delete 删除' : '灯具实体 · W 移动 · Delete 删除' : selectedIsActor ? '人物 · W 移动 · E 旋转 · R 缩放 · Delete 删除' : '直接点击人物 / 灯具 / 摄影机 / 机位即可选中';
+  const objectHint = selectedIsCamera ? '摄影机实体 · W 移动 · E 旋转镜头方向 · 主摄影机受保护' : selectedIsCameraKeyframe ? '机位实体 · W 移动 · E 旋转 · Delete 删除' : selectedIsLight ? lightCanRotate(selectedLight) ? '灯具实体 · W 移动 · E 旋转灯头 · Delete 删除' : '灯具实体 · W 移动 · Delete 删除' : selectedIsActor ? '人物 · 导演视图可直接 W 移动 · E 旋转 · R 缩放 · Delete 删除' : '直接点击人物 / 灯具 / 摄影机 / 机位即可选中；点空白返回镜头级设置';
+
   return <div className="viewport-shell" data-pose-mode={poseEnabled ? 'active' : 'inactive'} data-rig-selection={rigSelection}>
     <div className="viewport-toolbar">
       <span className="chip">3D 场面调度 / 预演</span>
       <button className={viewMode === 'director' ? 'active' : ''} onClick={() => setViewMode('director')}>导演视图</button>
       <button className={viewMode === 'shot' ? 'active' : ''} onClick={() => setViewMode('shot')}>镜头视图</button>
       <button disabled={!shotEditable || !selectedIsActor || viewMode !== 'director'} className={poseEnabled && poseActorId === selectedObjectId ? 'active' : ''} onClick={() => selectedObjectId && setPoseEnabled(!(poseEnabled && poseActorId === selectedObjectId), selectedObjectId)}>{poseEnabled && poseActorId === selectedObjectId ? '退出人物调姿' : '人物调姿'}</button>
-      {!poseEnabled && <><button disabled={!shotEditable} className={shotEditable && transformMode === 'translate' ? 'active' : ''} onClick={() => setTransformMode('translate')} title="W">移动 W</button><button disabled={!shotEditable || !selectedCanRotate} className={shotEditable && selectedCanRotate && transformMode === 'rotate' ? 'active' : ''} onClick={() => setTransformMode('rotate')} title="E">旋转 E</button><button disabled={!shotEditable || !selectedIsActor} className={shotEditable && selectedIsActor && transformMode === 'scale' ? 'active' : ''} onClick={() => setTransformMode('scale')} title="R">缩放 R</button></>}
+      {!poseEnabled && <>
+        <button disabled={!shotEditable || viewMode !== 'director' || !selectedObjectId} className={shotEditable && viewMode === 'director' && transformMode === 'translate' ? 'active' : ''} onClick={() => setTransformMode('translate')} title="W">{selectedIsActor ? '移动人物 W' : '移动 W'}</button>
+        <button disabled={!shotEditable || viewMode !== 'director' || !selectedCanRotate} className={shotEditable && viewMode === 'director' && selectedCanRotate && transformMode === 'rotate' ? 'active' : ''} onClick={() => setTransformMode('rotate')} title="E">旋转 E</button>
+        <button disabled={!shotEditable || viewMode !== 'director' || !selectedIsActor} className={shotEditable && viewMode === 'director' && selectedIsActor && transformMode === 'scale' ? 'active' : ''} onClick={() => setTransformMode('scale')} title="R">缩放 R</button>
+      </>}
       <span>{poseEnabled ? '调姿：蓝色=FK关节 · 绿色=IK目标 · 橙色=肘膝方向 · 黄色=注视目标' : shotEditable ? objectHint : uiZh.approvedReadonly}</span>
       {sceneNotice && <span className="chip">{sceneNotice}</span>}
       <span data-character-status>{characterStatus}</span>
       <span className="lens-readout">时间 {playhead.toFixed(2)} 秒 · {sampledCamera.focalLengthMm.toFixed(0)} 毫米 · f/{sampledCamera.aperture} · {shot.frameAspect.toFixed(3)}:1 · 曝光 EV {shot.exposureEv >= 0 ? '+' : ''}{shot.exposureEv.toFixed(1)}</span>
     </div>
+    {viewMode === 'director' && <div className="director-guide-toolbar" aria-label="导演辅助线工具栏" data-director-guide-toolbar>
+      <span>辅助结构</span>
+      {directorGuideDefinitions.map((definition) => <button
+        key={definition.id}
+        type="button"
+        className={guideVisibility[definition.id] ? 'active' : ''}
+        aria-pressed={guideVisibility[definition.id]}
+        title={definition.title}
+        data-guide-toggle={definition.id}
+        onClick={() => toggleGuide(definition.id)}
+      >{definition.label}</button>)}
+      <span className="guide-spacer" />
+      <button type="button" className="utility" onClick={showCommonGuides}>常用</button>
+      <button type="button" className="utility" onClick={hideAllGuides}>全部隐藏</button>
+    </div>}
     <div className="viewport" ref={mountRef} />
   </div>;
 }
