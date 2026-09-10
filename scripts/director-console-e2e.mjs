@@ -53,6 +53,10 @@ async function pressShortcut(key) {
   await page.waitForTimeout(80);
 }
 
+async function expectSelectionKind(kind) {
+  await page.locator(`[data-selection-inspector][data-selection-kind="${kind}"]`).waitFor({ state: 'visible' });
+}
+
 try {
   await page.goto(BASE_URL, { waitUntil: 'networkidle' });
   await page.getByRole('button', { name: '3D 导演台', exact: true }).click();
@@ -62,9 +66,24 @@ try {
   const existing = page.locator('.director-light-existing > button');
   const initialCount = await existing.count();
 
-  // Direct viewport picking: camera and actor must be selectable without the left list.
+  // Director structure toolbar: each guide is independently switchable and camera frustum can be hidden without hiding the camera entity.
+  const guideToolbar = page.locator('[data-director-guide-toolbar]');
+  await guideToolbar.waitFor({ state: 'visible' });
+  for (const id of ['grid', 'world-axes', 'camera-frustum', 'camera-axis', 'actor-height', 'axis-180', 'look-lines', 'motion-paths']) {
+    if (await guideToolbar.locator(`[data-guide-toggle="${id}"]`).count() !== 1) throw new Error(`导演辅助工具栏缺少 ${id}。`);
+  }
+  const frustumToggle = guideToolbar.locator('[data-guide-toggle="camera-frustum"]');
+  if (await frustumToggle.getAttribute('aria-pressed') !== 'true') throw new Error('摄影机视锥默认没有开启。');
+  await frustumToggle.click();
+  if (await frustumToggle.getAttribute('aria-pressed') !== 'false') throw new Error('摄影机视锥无法单独隐藏。');
+  await frustumToggle.click();
+
+  // Direct viewport picking: camera and actor must be selectable and right inspector must follow the selected subject.
   await clickWorld({ x: 0, y: 1.55, z: 5.8 });
   if (!(await activeSceneTreeButton('A Cam'))) throw new Error('直接点击 3D 摄影机实体没有选中摄影机。');
+  await expectSelectionKind('camera');
+  const cameraProperties = page.locator('[data-subject-properties="camera"]');
+  await cameraProperties.getByText('主体属性 · 摄影机').waitFor();
   await pressShortcut('e');
   const rotateButton = page.locator('.viewport-toolbar button[title="E"]');
   if (!(await rotateButton.evaluate((node) => node.classList.contains('active')))) throw new Error('选中摄影机后 E 没有进入旋转模式。');
@@ -72,40 +91,48 @@ try {
   await page.getByText('主摄影机是当前镜头的必需对象').waitFor();
   if (!(await activeSceneTreeButton('A Cam'))) throw new Error('保护主摄影机时不应丢失当前选择。');
 
+  const focusInput = cameraProperties.locator('.number-field').filter({ hasText: '对焦距离（米）' }).locator('input');
+  await focusInput.fill('2'); await focusInput.press('Enter');
+  await page.waitForTimeout(100);
+  const originalFocus = Number(await focusInput.inputValue());
+
   await clickWorld({ x: -1.3, y: 1.45, z: 0 });
   if (!(await activeSceneTreeButton('角色 A'))) throw new Error('直接点击正式 SkinnedMesh 人物没有选中角色 A。');
+  await expectSelectionKind('actor');
+  const actorProperties = page.locator('[data-subject-properties="actor"]');
+  await actorProperties.getByText('主体属性 · 场面调度').waitFor();
+  await pressShortcut('w');
+  const translateButton = page.locator('.viewport-toolbar button[title="W"]');
+  if (!(await translateButton.evaluate((node) => node.classList.contains('active')))) throw new Error('导演视图选中人物后 W 没有进入人物移动模式。');
 
-  // Camera assistant: real UI actions must alter focus distance and expose the physical hyperfocal result.
+  // Camera assistant: focus the selected actor, then inspect the written camera value from the camera's focused inspector.
   const cameraAssistant = page.locator('[data-camera-assistant]');
   await cameraAssistant.waitFor({ state: 'visible' });
   const assistantText = await cameraAssistant.textContent();
   if (!assistantText?.includes('景深范围') || !assistantText.includes('超焦距') || !assistantText.includes('视场角')) throw new Error('摄影助手缺少视场角 / 景深 / 超焦距读数。');
-  const cameraInspector = page.locator('.inspector section').filter({ hasText: '摄影机 ·' }).last();
-  await cameraInspector.waitFor();
-  const focusInput = cameraInspector.locator('.number-field').filter({ hasText: '对焦距离（米）' }).locator('input');
-  await focusInput.fill('2'); await focusInput.press('Enter');
-  await page.waitForTimeout(100);
-  const originalFocus = Number(await focusInput.inputValue());
   await cameraAssistant.getByRole('button', { name: '对焦选中人物', exact: true }).click();
   await page.waitForTimeout(100);
-  const actorFocus = Number(await focusInput.inputValue());
+  await clickWorld({ x: 0, y: 1.55, z: 5.8 });
+  await expectSelectionKind('camera');
+  const actorFocus = Number(await page.locator('[data-subject-properties="camera"] .number-field').filter({ hasText: '对焦距离（米）' }).locator('input').inputValue());
   if (!Number.isFinite(actorFocus) || actorFocus <= 0 || actorFocus < originalFocus + 1) throw new Error('“对焦选中人物”没有把人物焦平面距离写入摄影机。');
   await cameraAssistant.getByRole('button', { name: '对焦镜头目标', exact: true }).click();
   await page.waitForTimeout(100);
-  const targetFocus = Number(await focusInput.inputValue());
+  const targetFocus = Number(await page.locator('[data-subject-properties="camera"] .number-field').filter({ hasText: '对焦距离（米）' }).locator('input').inputValue());
   if (!Number.isFinite(targetFocus) || targetFocus <= 0) throw new Error('“对焦镜头目标”没有写入有效对焦距离。');
   await cameraAssistant.getByRole('button', { name: '超焦距', exact: true }).click();
   await page.waitForTimeout(100);
-  const hyperfocalFocus = Number(await focusInput.inputValue());
+  const hyperfocalFocus = Number(await page.locator('[data-subject-properties="camera"] .number-field').filter({ hasText: '对焦距离（米）' }).locator('input').inputValue());
   if (!Number.isFinite(hyperfocalFocus) || hyperfocalFocus <= 0) throw new Error('“超焦距”没有写入有效距离。');
   if (!(await cameraAssistant.textContent())?.includes('∞')) throw new Error('对焦超焦距后，摄影助手没有显示无穷远远景深。');
 
-  // Add one tangible area light and capture its initial, camera-relative in-view position.
+  // Add one tangible area light: selection inspector must switch to that exact light and expose independent controls.
   await page.locator('[data-light-preset="key-area"]').click();
   await page.locator('.director-selected-light').filter({ hasText: '主光 1' }).waitFor();
   if (await existing.count() !== initialCount + 1) throw new Error('一键加入主光后，镜头灯具数量没有增加。');
-  const inspectorLight = page.locator('.inspector section').filter({ hasText: '灯光 · 主光 1' });
-  await inspectorLight.waitFor();
+  await expectSelectionKind('light');
+  const inspectorLight = page.locator('[data-subject-properties="light"]');
+  await inspectorLight.getByText('主体属性 · 区域光').waitFor();
   const inspectorNumbers = inspectorLight.locator('input[type=number]');
   const initialAreaPosition = {
     x: Number(await inspectorNumbers.nth(2).inputValue()),
@@ -115,25 +142,27 @@ try {
 
   // Change selection to camera, then reselect the physical area-light body directly from 3D.
   await clickWorld({ x: 0, y: 1.55, z: 5.8 });
+  await expectSelectionKind('camera');
   await clickWorld(initialAreaPosition);
+  await expectSelectionKind('light');
   await page.locator('.director-selected-light').filter({ hasText: '主光 1' }).waitFor();
   await pressShortcut('e');
   if (!(await rotateButton.evaluate((node) => node.classList.contains('active')))) throw new Error('可定向灯具按 E 后没有进入灯头旋转模式。');
 
-  const intensity = inspectorNumbers.first();
+  const activeLightNumbers = page.locator('[data-subject-properties="light"] input[type=number]');
+  const intensity = activeLightNumbers.first();
   await intensity.fill('6.5'); await intensity.press('Enter');
   await page.locator('.director-selected-light').filter({ hasText: '6.50' }).waitFor();
 
-  // LibTV-style six-direction shortcuts are tested independently from picking because some placements may be occluded.
-  const beforeTopY = Number(await inspectorNumbers.nth(3).inputValue());
+  const beforeTopY = Number(await activeLightNumbers.nth(3).inputValue());
   await page.locator('[data-light-direction="top"]').click();
   await page.waitForTimeout(100);
-  const afterTopY = Number(await inspectorNumbers.nth(3).inputValue());
+  const afterTopY = Number(await activeLightNumbers.nth(3).inputValue());
   if (!(afterTopY > beforeTopY + 0.5)) throw new Error('“上”方向快捷布光没有真正移动灯具。');
-  const beforeBackZ = Number(await inspectorNumbers.nth(4).inputValue());
+  const beforeBackZ = Number(await activeLightNumbers.nth(4).inputValue());
   await page.locator('[data-light-direction="back"]').click();
   await page.waitForTimeout(100);
-  const afterBackZ = Number(await inspectorNumbers.nth(4).inputValue());
+  const afterBackZ = Number(await activeLightNumbers.nth(4).inputValue());
   if (Math.abs(afterBackZ - beforeBackZ) < 0.5) throw new Error('“后”方向快捷布光没有真正改变灯具位置。');
 
   await pressShortcut('Delete');
@@ -143,6 +172,7 @@ try {
   if (await existing.count() !== initialCount + 1) throw new Error('Delete 删除灯具没有进入 Undo 历史。');
 
   await page.locator('.director-light-existing > button').filter({ hasText: '主光 1' }).click();
+  await expectSelectionKind('light');
   await page.getByRole('button', { name: '复制灯具', exact: true }).click();
   await page.locator('.director-selected-light').filter({ hasText: '主光 1 副本' }).waitFor();
   if (await existing.count() !== initialCount + 2) throw new Error('复制灯具没有生成独立灯具。');
@@ -151,6 +181,8 @@ try {
 
   await page.locator('[data-light-preset="ambient"]').click();
   await page.locator('.director-selected-light').filter({ hasText: '环境 1' }).waitFor();
+  await expectSelectionKind('light');
+  await page.locator('[data-subject-properties="light"]').getByText('环境光只负责最低照度').waitFor();
   if (await page.getByRole('button', { name: '瞄准人物中心', exact: true }).count()) throw new Error('环境光错误暴露了方向瞄准操作。');
   if (await page.locator('[data-light-direction]').count()) throw new Error('环境光错误暴露了空间方向快捷键。');
   if (await existing.count() !== initialCount + 2) throw new Error('环境光没有加入镜头。');
@@ -158,18 +190,20 @@ try {
   await page.waitForTimeout(100);
   if (await existing.count() !== initialCount + 1) throw new Error('灯光新增没有进入工程 Undo。');
 
-  // Pose verification comes last so form focus / pose UI cannot influence equipment-shortcut validation.
+  // Pose verification comes last: stock archery pose now uses height-scaled hand IK.
   await clickWorld({ x: -1.3, y: 1.45, z: 0 });
   if (!(await activeSceneTreeButton('角色 A'))) throw new Error('灯光操作后无法从 3D 重新选中角色 A。');
-  const actorInspector = page.locator('.inspector section').filter({ hasText: '场面调度 · 角色 A' });
-  await actorInspector.waitFor();
+  await expectSelectionKind('actor');
+  const actorInspector = page.locator('[data-subject-properties="actor"]');
   const poseSelect = actorInspector.locator('select').first();
-  await poseSelect.selectOption({ label: '拉弓满弦' });
-  await actorInspector.getByText('姿势：拉弓满弦').waitFor();
+  await poseSelect.selectOption('archery-draw');
+  await page.waitForTimeout(120);
+  if (await poseSelect.inputValue() !== 'archery-draw') throw new Error('拉弓满弦姿势没有应用到选中人物。');
+  await actorInspector.getByText('需要落手位的预设已使用身高比例 IK').waitFor();
 
   await page.screenshot({ path: path.join(ARTIFACT_DIR, 'desktop-director-tangible-equipment.png'), fullPage: false });
   if (errors.length) throw new Error(`3D 导演台出现浏览器错误：${errors.join(' | ')}`);
-  console.log('PDS 3D 导演台 Chromium 旅程通过：摄影助手景深/人物焦平面对焦/超焦距、实体摄影机/人物/灯具直接拾取、E 旋转、Delete、Undo、35 组姿势中的拉弓满弦、快速摆灯与六方向布光均可用。');
+  console.log('PDS 3D 导演台 Chromium 旅程通过：主体专属 Inspector、导演视图人物移动、八类结构辅助线/机位视锥隐藏、摄影助手、身高比例手部 IK、电影化灯光、实体拾取、Delete/Undo 与六方向布光均可用。');
 } finally {
   await browser.close();
 }
