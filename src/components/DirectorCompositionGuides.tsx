@@ -107,5 +107,5 @@ export function DirectorCompositionGuides() {
     <CompositionGuideOverlay visibility={visibility} />
   </div>, viewportTarget) : null;
 
-  return <><ShotViewActorMover />{toolbar}{overlay}</>;
+  return <><ShotViewActorMover active={shotViewActive} viewportTarget={viewportTarget} />{toolbar}{overlay}</>;
 }
