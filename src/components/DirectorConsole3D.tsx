@@ -5,6 +5,7 @@ import { addDirectorLight, aimDirectorLightAtStage, duplicateDirectorLight, remo
 import { sampleActorTransform, sampleCamera } from '../utils/animation';
 import { cameraDepthOfField, focalLengthToHorizontalFovDeg, focalLengthToVerticalFovDeg } from '../utils/math';
 import type { Vec3 } from '../domain/model';
+import { DirectorCompositionGuides } from './DirectorCompositionGuides';
 
 const lightTypeZh = { directional: '平行光', point: '点光', spot: '聚光灯', area: '区域光', ambient: '环境光' } as const;
 
@@ -58,6 +59,7 @@ export function DirectorConsole3D() {
 
   return <div className="director-console-3d">
     <DirectorViewport />
+    <DirectorCompositionGuides />
 
     <div className="director-console-hud" aria-label="3D 导演台状态">
       <div><b>3D 导演台</b><span>{shot.name} · v{shot.version}</span></div>
