@@ -1,7 +1,7 @@
 {
   "name": "professional-director-station",
   "private": true,
-  "version": "1.2.1",
+  "version": "1.2.2",
   "type": "module",
   "scripts": {
     "characters:install": "node scripts/install-character-assets.mjs",
@@ -12,7 +12,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:visual": "node scripts/visual-smoke-runner.mjs && node scripts/director-console-e2e.mjs",
+    "test:visual": "node scripts/visual-smoke-runner.mjs && node scripts/director-console-e2e.mjs && node scripts/composition-guides-e2e.mjs",
     "audit:static": "node scripts/quality-gate.mjs",
     "audit:windows": "node scripts/windows-smoke.mjs",
     "audit:collab": "node scripts/collaboration-smoke.mjs && node scripts/collaboration-server-smoke.mjs",
