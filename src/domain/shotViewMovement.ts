@@ -24,6 +24,10 @@ function multiply(v: Vec3, scalar: number): Vec3 {
   return { x: v.x * scalar, y: v.y * scalar, z: v.z * scalar };
 }
 
+function dot(a: Vec3, b: Vec3) {
+  return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
 function cross(a: Vec3, b: Vec3): Vec3 {
   return {
     x: a.y * b.z - a.z * b.y,
@@ -42,6 +46,40 @@ function normalize(v: Vec3): Vec3 | undefined {
   return multiply(v, 1 / magnitude);
 }
 
+function cameraBasis(camera: ShotMoveCamera) {
+  const forward = normalize(subtract(camera.target, camera.position));
+  if (!forward) return undefined;
+  const right = normalize(cross(forward, { x: 0, y: 1, z: 0 }));
+  if (!right) return undefined;
+  const up = normalize(cross(right, forward));
+  if (!up) return undefined;
+  return { forward, right, up };
+}
+
+export function shotViewWorldPoint(
+  point: Vec3,
+  viewport: ViewportSize,
+  frameAspect: number,
+  camera: ShotMoveCamera,
+): ViewportPoint | undefined {
+  const frame = fitAspectRect(viewport.width, viewport.height, frameAspect);
+  const basis = cameraBasis(camera);
+  if (!basis) return undefined;
+  const offset = subtract(point, camera.position);
+  const depth = dot(offset, basis.forward);
+  if (depth <= 0.001) return undefined;
+  const verticalFovRad = focalLengthToVerticalFovDeg(camera.focalLengthMm, camera.sensorWidthMm, frameAspect) * Math.PI / 180;
+  const halfHeight = Math.tan(verticalFovRad / 2) * depth;
+  const halfWidth = halfHeight * frameAspect;
+  if (halfHeight <= 1e-9 || halfWidth <= 1e-9) return undefined;
+  const ndcX = dot(offset, basis.right) / halfWidth;
+  const ndcY = dot(offset, basis.up) / halfHeight;
+  return {
+    x: frame.x + (ndcX + 1) * 0.5 * frame.width,
+    y: frame.y + (1 - (ndcY + 1) * 0.5) * frame.height,
+  };
+}
+
 export function shotViewPointerGroundPoint(
   point: ViewportPoint,
   viewport: ViewportSize,
@@ -52,19 +90,13 @@ export function shotViewPointerGroundPoint(
   const frame = fitAspectRect(viewport.width, viewport.height, frameAspect);
   if (point.x < frame.x || point.x > frame.x + frame.width || point.y < frame.y || point.y > frame.y + frame.height) return undefined;
 
-  const forward = normalize(subtract(camera.target, camera.position));
-  if (!forward) return undefined;
-  const worldUp: Vec3 = { x: 0, y: 1, z: 0 };
-  const right = normalize(cross(forward, worldUp));
-  if (!right) return undefined;
-  const up = normalize(cross(right, forward));
-  if (!up) return undefined;
-
+  const basis = cameraBasis(camera);
+  if (!basis) return undefined;
   const ndcX = ((point.x - frame.x) / frame.width) * 2 - 1;
   const ndcY = 1 - ((point.y - frame.y) / frame.height) * 2;
   const verticalFovRad = focalLengthToVerticalFovDeg(camera.focalLengthMm, camera.sensorWidthMm, frameAspect) * Math.PI / 180;
   const tanHalfY = Math.tan(verticalFovRad / 2);
-  const ray = normalize(add(add(forward, multiply(right, ndcX * tanHalfY * frameAspect)), multiply(up, ndcY * tanHalfY)));
+  const ray = normalize(add(add(basis.forward, multiply(basis.right, ndcX * tanHalfY * frameAspect)), multiply(basis.up, ndcY * tanHalfY)));
   if (!ray || Math.abs(ray.y) <= 1e-7) return undefined;
 
   const distance = (groundY - camera.position.y) / ray.y;
