@@ -22,13 +22,13 @@ type DirectorLightDirectionPreset = {
 };
 
 export const directorLightToolPresets: DirectorLightToolPreset[] = [
-  { id: 'key-area', label: '主光 · 区域光', shortLabel: '主光', description: '摄影机左前方的大面积主光，适合快速建立人物塑形。', type: 'area', intensity: 8, colorTemperatureK: 5600, cameraRelativeOffset: { side: -2.4, height: 2.7, front: 2.2 } },
-  { id: 'fill-area', label: '补光 · 区域光', shortLabel: '补光', description: '摄影机右前方低强度柔光，用于控制面部反差。', type: 'area', intensity: 3.2, colorTemperatureK: 6000, cameraRelativeOffset: { side: 2.5, height: 1.8, front: 1.8 } },
-  { id: 'rim-spot', label: '轮廓光 · 聚光灯', shortLabel: '轮廓', description: '人物后侧聚光，用于把角色从背景中分离。', type: 'spot', intensity: 32, colorTemperatureK: 6500, cameraRelativeOffset: { side: 1.2, height: 2.6, front: -2.4 } },
-  { id: 'spot', label: '聚光灯', shortLabel: '聚光', description: '可移动、可定向的硬光源。', type: 'spot', intensity: 26, colorTemperatureK: 5600, cameraRelativeOffset: { side: -1.2, height: 2.4, front: 1.8 } },
-  { id: 'point', label: '点光源', shortLabel: '点光', description: '全向局部光源，适合台灯、裸灯泡和实景灯。', type: 'point', intensity: 24, colorTemperatureK: 4300, cameraRelativeOffset: { side: 0.8, height: 2.1, front: 1.1 } },
-  { id: 'sun', label: '平行光', shortLabel: '太阳', description: '方向一致的远距离硬光，适合太阳/月光方向。', type: 'directional', intensity: 2.4, colorTemperatureK: 5600, cameraRelativeOffset: { side: -4, height: 5.5, front: 3 } },
-  { id: 'ambient', label: '环境光', shortLabel: '环境', description: '无方向基础照明，只控制整体最低照度。', type: 'ambient', intensity: 0.35, colorTemperatureK: 7000, cameraRelativeOffset: { side: 0, height: 3, front: 0 } },
+  { id: 'key-area', label: '主光 · 区域光', shortLabel: '主光', description: '摄影机左前方偏高的大面积柔光，建立自然面部塑形并保留眼神光。', type: 'area', intensity: 6.8, colorTemperatureK: 5200, cameraRelativeOffset: { side: -2.5, height: 2.8, front: 2.7 } },
+  { id: 'fill-area', label: '补光 · 区域光', shortLabel: '补光', description: '摄影机右前方低强度冷柔光，只抬阴影，不与主光争方向。', type: 'area', intensity: 1.7, colorTemperatureK: 7000, cameraRelativeOffset: { side: 2.8, height: 1.9, front: 1.9 } },
+  { id: 'rim-spot', label: '轮廓光 · 聚光灯', shortLabel: '轮廓', description: '人物后侧偏高聚光，用于肩线和发丝分离，强度高于补光但避开正面。', type: 'spot', intensity: 24, colorTemperatureK: 6800, cameraRelativeOffset: { side: 1.5, height: 2.9, front: -2.8 } },
+  { id: 'spot', label: '聚光灯', shortLabel: '聚光', description: '可移动、可定向的硬光源，默认从四分之三前侧打向人物。', type: 'spot', intensity: 22, colorTemperatureK: 5600, cameraRelativeOffset: { side: -1.5, height: 2.6, front: 2.2 } },
+  { id: 'point', label: '点光源', shortLabel: '点光', description: '全向局部光源，适合台灯、裸灯泡和实景灯。', type: 'point', intensity: 18, colorTemperatureK: 4300, cameraRelativeOffset: { side: 0.9, height: 1.9, front: 1.2 } },
+  { id: 'sun', label: '平行光', shortLabel: '太阳', description: '方向一致的远距离硬光，默认高位侧前方，适合太阳或月光方向。', type: 'directional', intensity: 2.6, colorTemperatureK: 5600, cameraRelativeOffset: { side: -4, height: 5.8, front: 3.2 } },
+  { id: 'ambient', label: '环境光', shortLabel: '环境', description: '低强度环境底光，只抬最低照度，避免把人物面部层次洗平。', type: 'ambient', intensity: 0.18, colorTemperatureK: 7600, cameraRelativeOffset: { side: 0, height: 3, front: 0 } },
 ];
 
 export const directorLightDirectionPresets: DirectorLightDirectionPreset[] = [
