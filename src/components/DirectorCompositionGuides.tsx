@@ -10,6 +10,7 @@ import {
 import { useDirectorStore } from '../store/directorStore';
 import { fitAspectRect } from '../utils/math';
 import { CompositionGuideOverlay } from './CompositionGuideOverlay';
+import { ShotViewActorMover } from './ShotViewActorMover';
 
 const storageKey = 'pds.director.composition-guides.v1';
 
@@ -106,5 +107,5 @@ export function DirectorCompositionGuides() {
     <CompositionGuideOverlay visibility={visibility} />
   </div>, viewportTarget) : null;
 
-  return <>{toolbar}{overlay}</>;
+  return <><ShotViewActorMover />{toolbar}{overlay}</>;
 }
