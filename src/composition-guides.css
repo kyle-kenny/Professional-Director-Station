@@ -56,30 +56,62 @@
   position: relative;
 }
 
+.viewport-shell > .viewport-toolbar {
+  order: 0;
+}
+
+.viewport-shell > .shot-composition-toolbar {
+  order: 1;
+  flex: 0 0 38px;
+}
+
 .viewport-shell > .viewport {
   position: relative;
+  order: 2;
 }
 
-.director-guide-toolbar .composition-guide-divider {
-  width: 1px;
-  height: 18px;
+.shot-composition-frame {
+  position: absolute;
+  pointer-events: none;
+  z-index: 14;
+  overflow: hidden;
+}
+
+.shot-composition-toolbar {
+  align-self: flex-start;
+  width: 100%;
+}
+
+.director-guide-toolbar .shot-actor-move-hint {
   flex: 0 0 auto;
-  margin: 0 3px;
-  background: #2a343d;
+  margin-left: 5px;
+  padding: 3px 7px;
+  border: 1px dashed #344451;
+  border-radius: 999px;
+  color: #718392;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0;
 }
 
-/* The camera assistant occupies the upper-right of the director console.
-   Keep the horizontally scrollable guide toolbar's hit area to its left so
-   every guide control stays visible and clickable instead of sliding beneath it. */
+.director-guide-toolbar .shot-actor-move-hint.active {
+  border-color: #526f83;
+  color: #b9d7eb;
+}
+
+/* The camera assistant occupies the upper-right of the console at this height.
+   Keep both structure and shot-composition toolbars clear of its hit area. */
 @media (min-width: 1181px) {
-  .director-console-3d [data-director-guide-toolbar] {
+  .director-console-3d [data-director-guide-toolbar],
+  .director-console-3d [data-shot-composition-toolbar] {
     width: calc(100% - 360px);
     box-sizing: border-box;
   }
 }
 
 @media (min-width: 781px) and (max-width: 1180px) {
-  .director-console-3d [data-director-guide-toolbar] {
+  .director-console-3d [data-director-guide-toolbar],
+  .director-console-3d [data-shot-composition-toolbar] {
     width: calc(100% - 315px);
     box-sizing: border-box;
   }
