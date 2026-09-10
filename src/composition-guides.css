@@ -59,3 +59,28 @@
 .viewport-shell > .viewport {
   position: relative;
 }
+
+.director-guide-toolbar .composition-guide-divider {
+  width: 1px;
+  height: 18px;
+  flex: 0 0 auto;
+  margin: 0 3px;
+  background: #2a343d;
+}
+
+/* The camera assistant occupies the upper-right of the director console.
+   Keep the horizontally scrollable guide toolbar's hit area to its left so
+   every guide control stays visible and clickable instead of sliding beneath it. */
+@media (min-width: 1181px) {
+  .director-console-3d [data-director-guide-toolbar] {
+    width: calc(100% - 360px);
+    box-sizing: border-box;
+  }
+}
+
+@media (min-width: 781px) and (max-width: 1180px) {
+  .director-console-3d [data-director-guide-toolbar] {
+    width: calc(100% - 315px);
+    box-sizing: border-box;
+  }
+}
