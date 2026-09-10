@@ -1,10 +1,15 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { DirectorProject, Transform } from '../domain/model';
-import { previewActorTransform, shotViewPointerGroundPoint, translateTransformOnGround } from '../domain/shotViewMovement';
+import {
+  previewActorTransform,
+  shotViewPointerGroundPoint,
+  shotViewWorldPoint,
+  translateTransformOnGround,
+} from '../domain/shotViewMovement';
 import { useDirectorStore } from '../store/directorStore';
 import { sampleActorTransform, sampleCamera } from '../utils/animation';
 
-type PendingDrag = { pointerId: number; x: number; y: number };
 type DragSession = {
   pointerId: number;
   actorId: string;
@@ -19,156 +24,152 @@ type DragSession = {
   finalTransform: Transform;
 };
 
-function shotViewIsActive() {
-  const buttons = document.querySelectorAll<HTMLButtonElement>('.director-console-3d .viewport-toolbar button');
-  return Array.from(buttons).some((button) => button.textContent?.trim() === '镜头视图' && button.classList.contains('active'));
-}
+type ShotViewActorMoverProps = {
+  active: boolean;
+  viewportTarget: HTMLElement | null;
+};
 
-export function ShotViewActorMover() {
-  const pendingRef = useRef<PendingDrag | null>(null);
+export function ShotViewActorMover({ active, viewportTarget }: ShotViewActorMoverProps) {
   const dragRef = useRef<DragSession | null>(null);
+  const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
+  const shot = useDirectorStore((state) => state.getActiveShot());
+  const playhead = useDirectorStore((state) => state.playhead);
+  const selectedObjectId = useDirectorStore((state) => state.selectedObjectId);
+  const actor = shot.actors.find((item) => item.id === selectedObjectId);
+  const editable = shot.status !== 'APPROVED';
 
   useEffect(() => {
-    const root = document.querySelector<HTMLElement>('.director-console-3d');
-    if (!root) return;
-    let canvas: HTMLCanvasElement | null = null;
+    if (!viewportTarget) { setViewportSize({ width: 0, height: 0 }); return; }
+    const update = () => setViewportSize({ width: viewportTarget.clientWidth, height: viewportTarget.clientHeight });
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(viewportTarget);
+    return () => observer.disconnect();
+  }, [viewportTarget]);
 
-    const restoreBase = (session: DragSession) => {
-      useDirectorStore.setState({
-        project: structuredClone(session.baseProject),
-        undoStack: session.baseUndo,
-        redoStack: session.baseRedo,
-      });
+  const dragBox = useMemo(() => {
+    if (!active || !viewportTarget || !actor || !editable || viewportSize.width <= 0 || viewportSize.height <= 0) return undefined;
+    const transform = sampleActorTransform(actor, playhead);
+    const camera = sampleCamera(shot.camera, playhead);
+    const feet = shotViewWorldPoint(transform.position, viewportSize, shot.frameAspect, camera);
+    const actorHeight = actor.demographics.heightM * Math.max(0.1, Math.abs(transform.scale.y));
+    const head = shotViewWorldPoint(
+      { x: transform.position.x, y: transform.position.y + actorHeight, z: transform.position.z },
+      viewportSize,
+      shot.frameAspect,
+      camera,
+    );
+    if (!feet || !head) return undefined;
+    const projectedHeight = Math.abs(feet.y - head.y);
+    if (projectedHeight < 8) return undefined;
+    const width = Math.max(40, Math.min(150, projectedHeight * 0.42));
+    const top = Math.min(feet.y, head.y) - 8;
+    const height = projectedHeight + 16;
+    return {
+      left: (feet.x + head.x) * 0.5 - width * 0.5,
+      top,
+      width,
+      height,
     };
+  }, [active, actor, editable, playhead, shot.camera, shot.frameAspect, viewportSize, viewportTarget]);
 
-    const cancelDrag = () => {
-      const session = dragRef.current;
-      if (session) restoreBase(session);
-      dragRef.current = null;
-      pendingRef.current = null;
+  const restoreBase = (session: DragSession) => {
+    useDirectorStore.setState({
+      project: structuredClone(session.baseProject),
+      undoStack: session.baseUndo,
+      redoStack: session.baseRedo,
+    });
+  };
+
+  const onPointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
+    if (event.button !== 0 || !active || !viewportTarget || !actor || !editable) return;
+    const state = useDirectorStore.getState();
+    const currentShot = state.getActiveShot();
+    const currentActor = currentShot.actors.find((item) => item.id === actor.id);
+    if (!currentActor || currentShot.status === 'APPROVED') return;
+    const rect = viewportTarget.getBoundingClientRect();
+    const baseTransform = sampleActorTransform(currentActor, state.playhead);
+    const camera = sampleCamera(currentShot.camera, state.playhead);
+    const startGround = shotViewPointerGroundPoint(
+      { x: event.clientX - rect.left, y: event.clientY - rect.top },
+      { width: rect.width, height: rect.height },
+      currentShot.frameAspect,
+      camera,
+      baseTransform.position.y,
+    );
+    if (!startGround) return;
+    dragRef.current = {
+      pointerId: event.pointerId,
+      actorId: currentActor.id,
+      sequenceId: state.activeSequenceId,
+      shotId: state.activeShotId,
+      playhead: state.playhead,
+      baseProject: structuredClone(state.project),
+      baseUndo: state.undoStack,
+      baseRedo: state.redoStack,
+      baseTransform,
+      startGround,
+      finalTransform: baseTransform,
     };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    event.preventDefault();
+    event.stopPropagation();
+  };
 
-    const onPointerDown = (event: PointerEvent) => {
-      if (event.button !== 0 || !shotViewIsActive()) return;
-      const state = useDirectorStore.getState();
-      if (state.getActiveShot().status === 'APPROVED') return;
-      pendingRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
-    };
+  const onPointerMove = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const session = dragRef.current;
+    if (!session || session.pointerId !== event.pointerId || !viewportTarget) return;
+    const state = useDirectorStore.getState();
+    const currentShot = state.project.sequences.find((sequence) => sequence.id === session.sequenceId)?.shots.find((item) => item.id === session.shotId);
+    if (!currentShot || currentShot.status === 'APPROVED') return;
+    const rect = viewportTarget.getBoundingClientRect();
+    const camera = sampleCamera(currentShot.camera, session.playhead);
+    const currentGround = shotViewPointerGroundPoint(
+      { x: event.clientX - rect.left, y: event.clientY - rect.top },
+      { width: rect.width, height: rect.height },
+      currentShot.frameAspect,
+      camera,
+      session.baseTransform.position.y,
+    );
+    if (!currentGround) return;
+    const nextTransform = translateTransformOnGround(session.baseTransform, session.startGround, currentGround);
+    session.finalTransform = nextTransform;
+    const previewProject = previewActorTransform(
+      session.baseProject,
+      session.sequenceId,
+      session.shotId,
+      session.actorId,
+      session.playhead,
+      nextTransform,
+    );
+    useDirectorStore.setState({ project: previewProject, undoStack: session.baseUndo, redoStack: session.baseRedo });
+    event.preventDefault();
+    event.stopPropagation();
+  };
 
-    const onPointerMove = (event: PointerEvent) => {
-      const pending = pendingRef.current;
-      if (!pending || pending.pointerId !== event.pointerId || !canvas || !shotViewIsActive()) return;
-      if (!dragRef.current && Math.hypot(event.clientX - pending.x, event.clientY - pending.y) < 4) return;
+  const finishDrag = (event: React.PointerEvent<HTMLButtonElement>, commit: boolean) => {
+    const session = dragRef.current;
+    if (!session || session.pointerId !== event.pointerId) return;
+    dragRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    restoreBase(session);
+    if (commit) useDirectorStore.getState().setActorTransform(session.actorId, session.finalTransform);
+    event.preventDefault();
+    event.stopPropagation();
+  };
 
-      if (!dragRef.current) {
-        const state = useDirectorStore.getState();
-        const shot = state.getActiveShot();
-        const actor = shot.actors.find((item) => item.id === state.selectedObjectId);
-        if (!actor || shot.status === 'APPROVED') { pendingRef.current = null; return; }
-        const rect = canvas.getBoundingClientRect();
-        const baseTransform = sampleActorTransform(actor, state.playhead);
-        const camera = sampleCamera(shot.camera, state.playhead);
-        const startGround = shotViewPointerGroundPoint(
-          { x: pending.x - rect.left, y: pending.y - rect.top },
-          { width: rect.width, height: rect.height },
-          shot.frameAspect,
-          camera,
-          baseTransform.position.y,
-        );
-        if (!startGround) { pendingRef.current = null; return; }
-        dragRef.current = {
-          pointerId: event.pointerId,
-          actorId: actor.id,
-          sequenceId: state.activeSequenceId,
-          shotId: state.activeShotId,
-          playhead: state.playhead,
-          baseProject: structuredClone(state.project),
-          baseUndo: state.undoStack,
-          baseRedo: state.redoStack,
-          baseTransform,
-          startGround,
-          finalTransform: baseTransform,
-        };
-        canvas.setPointerCapture?.(event.pointerId);
-      }
+  if (!active || !viewportTarget || !actor || !editable || !dragBox) return null;
 
-      const session = dragRef.current;
-      if (!session) return;
-      const state = useDirectorStore.getState();
-      const shot = state.project.sequences.find((sequence) => sequence.id === session.sequenceId)?.shots.find((item) => item.id === session.shotId);
-      if (!shot || shot.status === 'APPROVED') { cancelDrag(); return; }
-      const rect = canvas.getBoundingClientRect();
-      const camera = sampleCamera(shot.camera, session.playhead);
-      const currentGround = shotViewPointerGroundPoint(
-        { x: event.clientX - rect.left, y: event.clientY - rect.top },
-        { width: rect.width, height: rect.height },
-        shot.frameAspect,
-        camera,
-        session.baseTransform.position.y,
-      );
-      if (!currentGround) return;
-
-      const nextTransform = translateTransformOnGround(session.baseTransform, session.startGround, currentGround);
-      session.finalTransform = nextTransform;
-      const previewProject = previewActorTransform(
-        session.baseProject,
-        session.sequenceId,
-        session.shotId,
-        session.actorId,
-        session.playhead,
-        nextTransform,
-      );
-      useDirectorStore.setState({ project: previewProject, undoStack: session.baseUndo, redoStack: session.baseRedo });
-      event.preventDefault();
-    };
-
-    const onPointerUp = (event: PointerEvent) => {
-      if (pendingRef.current?.pointerId !== event.pointerId) return;
-      const session = dragRef.current;
-      pendingRef.current = null;
-      dragRef.current = null;
-      if (!session) return;
-      restoreBase(session);
-      useDirectorStore.getState().setActorTransform(session.actorId, session.finalTransform);
-      if (canvas?.hasPointerCapture?.(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
-    };
-
-    const onPointerCancel = (event: PointerEvent) => {
-      if (pendingRef.current?.pointerId !== event.pointerId) return;
-      if (canvas?.hasPointerCapture?.(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
-      cancelDrag();
-    };
-
-    const detach = () => {
-      if (!canvas) return;
-      canvas.removeEventListener('pointerdown', onPointerDown);
-      canvas.removeEventListener('pointermove', onPointerMove);
-      canvas.removeEventListener('pointerup', onPointerUp);
-      canvas.removeEventListener('pointercancel', onPointerCancel);
-      canvas = null;
-    };
-
-    const attach = () => {
-      const next = root.querySelector<HTMLCanvasElement>('.viewport canvas');
-      if (next === canvas) return;
-      detach();
-      canvas = next;
-      if (!canvas) return;
-      canvas.addEventListener('pointerdown', onPointerDown);
-      canvas.addEventListener('pointermove', onPointerMove, { passive: false });
-      canvas.addEventListener('pointerup', onPointerUp);
-      canvas.addEventListener('pointercancel', onPointerCancel);
-    };
-
-    attach();
-    const observer = new MutationObserver(attach);
-    observer.observe(root, { childList: true, subtree: true });
-    return () => {
-      observer.disconnect();
-      cancelDrag();
-      detach();
-    };
-  }, []);
-
-  return null;
+  return createPortal(<button
+    type="button"
+    className="shot-actor-drag-handle"
+    aria-label={`平移 ${actor.name}`}
+    title="拖动人物：保持脚底高度，在镜头构图中平移场面调度位置"
+    data-shot-actor-drag-handle={actor.id}
+    style={dragBox}
+    onPointerDown={onPointerDown}
+    onPointerMove={onPointerMove}
+    onPointerUp={(event) => finishDrag(event, true)}
+    onPointerCancel={(event) => finishDrag(event, false)}
+  ><span aria-hidden="true" /></button>, viewportTarget);
 }
