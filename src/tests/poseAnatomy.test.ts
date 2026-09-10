@@ -29,13 +29,20 @@ describe('动作库人体手位', () => {
     expect((tallRig.ik.leftHand.target?.y ?? 0) / (shortRig.ik.leftHand.target?.y ?? 1)).toBeCloseTo(2 / 1.5, 6);
   });
 
-  it('拉弓满弦把持弓手送到前方，并让拉弦手停在面部附近', () => {
-    const rig = presetRigForActor(actorFixture(1.8, 'archery-draw'));
+  it('拉弓满弦把持弓手送到可达前方，并让拉弦手停在面部附近', () => {
+    const height = 1.8;
+    const rig = presetRigForActor(actorFixture(height, 'archery-draw'));
+    const bowHand = rig.ik.leftHand.target!;
+    const stringHand = rig.ik.rightHand.target!;
     expect(rig.ik.leftHand.enabled).toBe(true);
     expect(rig.ik.rightHand.enabled).toBe(true);
-    expect(rig.ik.leftHand.target?.z).toBeLessThan(-0.8);
-    expect(rig.ik.rightHand.target?.y).toBeGreaterThan(1.4);
-    expect(Math.abs(rig.ik.rightHand.target?.z ?? 1)).toBeLessThan(0.15);
+    expect(bowHand.z).toBeLessThan(-0.5);
+    expect(bowHand.z).toBeGreaterThan(-0.7);
+    expect(stringHand.y).toBeGreaterThan(1.45);
+    expect(Math.abs(stringHand.z)).toBeLessThan(0.1);
+    const nominalLeftShoulder = { x: -0.125 * height, y: 0.82 * height, z: 0 };
+    const reach = Math.hypot(bowHand.x - nominalLeftShoulder.x, bowHand.y - nominalLeftShoulder.y, bowHand.z - nominalLeftShoulder.z);
+    expect(reach).toBeLessThan(0.38 * height);
   });
 
   it('手部 IK 只负责手位，手腕仍保留独立 FK 朝向调节', () => {
