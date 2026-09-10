@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createDefaultProject } from '../domain/defaultProject';
-import { previewActorTransform, shotViewPointerGroundPoint, translateTransformOnGround } from '../domain/shotViewMovement';
+import { previewActorTransform, shotViewPointerGroundPoint, shotViewWorldPoint, translateTransformOnGround } from '../domain/shotViewMovement';
 import { sampleActorTransform } from '../utils/animation';
 
 const camera = {
@@ -23,6 +23,18 @@ describe('shot-view actor movement', () => {
     expect(point!.x).toBeCloseTo(0, 5);
     expect(point!.y).toBeCloseTo(0, 5);
     expect(point!.z).toBeCloseTo(0, 5);
+  });
+
+  it('projects the camera target to the center of the effective shot frame', () => {
+    const point = shotViewWorldPoint(
+      camera.target,
+      { width: 1600, height: 1000 },
+      16 / 9,
+      camera,
+    );
+    expect(point).toBeDefined();
+    expect(point!.x).toBeCloseTo(800, 5);
+    expect(point!.y).toBeCloseTo(500, 5);
   });
 
   it('translates X/Z while preserving actor floor height, rotation and scale', () => {
