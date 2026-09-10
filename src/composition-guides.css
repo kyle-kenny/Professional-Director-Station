@@ -82,6 +82,42 @@
   width: 100%;
 }
 
+.shot-actor-drag-handle {
+  position: absolute;
+  z-index: 16;
+  margin: 0;
+  padding: 0;
+  border: 1px dashed rgba(137, 199, 238, 0.34);
+  border-radius: 8px;
+  background: rgba(68, 132, 170, 0.025);
+  cursor: grab;
+  touch-action: none;
+}
+
+.shot-actor-drag-handle:hover,
+.shot-actor-drag-handle:focus-visible {
+  border-color: rgba(159, 216, 250, 0.78);
+  background: rgba(79, 151, 193, 0.08);
+  outline: none;
+}
+
+.shot-actor-drag-handle:active {
+  cursor: grabbing;
+}
+
+.shot-actor-drag-handle > span {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  transform: translate(-50%, -50%);
+  border: 1px solid rgba(186, 225, 248, 0.76);
+  border-radius: 50%;
+  background: rgba(18, 30, 40, 0.58);
+  pointer-events: none;
+}
+
 .director-guide-toolbar .shot-actor-move-hint {
   flex: 0 0 auto;
   margin-left: 5px;
