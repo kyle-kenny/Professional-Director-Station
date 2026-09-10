@@ -14,6 +14,7 @@ page.on('console', (message) => { if (message.type() === 'error') errors.push(me
 
 const SHOT_CAMERA = { position: { x: 0, y: 1.55, z: 5.8 }, target: { x: 0, y: 1.35, z: 0 }, focalLengthMm: 50, sensorWidthMm: 36 };
 const SHOT_ASPECT = 16 / 9;
+const DEFAULT_ACTOR_A = { x: -1.3, y: 0, z: 0 };
 const subtract = (a, b) => ({ x: a.x - b.x, y: a.y - b.y, z: a.z - b.z });
 const dot = (a, b) => a.x * b.x + a.y * b.y + a.z * b.z;
 const cross = (a, b) => ({ x: a.y * b.z - a.z * b.y, y: a.z * b.x - a.x * b.z, z: a.x * b.y - a.y * b.x });
@@ -47,8 +48,22 @@ function projectShotPoint(point, box) {
   };
 }
 
-function actorPositionInput(axis) {
-  return page.locator('[data-subject-properties="actor"] .number-field').filter({ hasText: `位置 ${axis}（米）` }).locator('input');
+async function persistedActorPosition(actorId = 'actor-a') {
+  return page.evaluate((id) => {
+    const raw = window.localStorage.getItem('pds.project.v1');
+    if (!raw) return null;
+    const project = JSON.parse(raw);
+    for (const sequence of project.sequences ?? []) {
+      for (const shot of sequence.shots ?? []) {
+        const actor = shot.actors?.find((item) => item.id === id);
+        if (!actor) continue;
+        const tolerance = 0.5 / (shot.fps || 24);
+        const zeroFrame = actor.path?.find((frame) => Math.abs(frame.time) <= tolerance);
+        return zeroFrame?.position ?? actor.transform?.position ?? null;
+      }
+    }
+    return null;
+  }, actorId);
 }
 
 try {
@@ -94,34 +109,53 @@ try {
   await overlay.locator('[data-composition-guide="thirds"]').waitFor({ state: 'visible' });
   await overlay.locator('[data-composition-guide="center-cross"]').waitFor({ state: 'visible' });
 
-  // Default selection is actor A. Drag its visible torso inside shot view; translation must stay grounded and create one undoable edit.
+  // Default selection is actor A. Drag its visible torso inside shot view; verify the authoritative persisted project instead of presentation text.
   await page.locator('[data-selection-inspector][data-selection-kind="actor"]').waitFor({ state: 'visible' });
-  const beforeX = Number(await actorPositionInput('X').inputValue());
-  const beforeY = Number(await actorPositionInput('Y').inputValue());
-  const beforeZ = Number(await actorPositionInput('Z').inputValue());
+  const moveHint = toolbar.locator('[data-shot-actor-move-hint]');
+  if (!(await moveHint.textContent())?.includes('直接拖动人物')) throw new Error('镜头构图栏没有显示人物平移提示。');
+
   const canvas = page.locator('.viewport canvas');
   const canvasBox = await canvas.boundingBox();
   if (!canvasBox) throw new Error('找不到镜头视图 Canvas。');
-  const actorPoint = projectShotPoint({ x: beforeX, y: 1.0, z: beforeZ }, canvasBox);
+  const actorPoint = projectShotPoint({ x: DEFAULT_ACTOR_A.x, y: 1.0, z: DEFAULT_ACTOR_A.z }, canvasBox);
   await page.mouse.move(actorPoint.x, actorPoint.y);
   await page.mouse.down();
   await page.mouse.move(actorPoint.x + 90, actorPoint.y, { steps: 8 });
   await page.mouse.up();
-  await page.waitForTimeout(150);
 
-  const afterX = Number(await actorPositionInput('X').inputValue());
-  const afterY = Number(await actorPositionInput('Y').inputValue());
-  const afterZ = Number(await actorPositionInput('Z').inputValue());
-  if (Math.hypot(afterX - beforeX, afterZ - beforeZ) < 0.1) throw new Error('镜头视图拖动人物没有产生实际 X/Z 平移。');
-  if (Math.abs(afterY - beforeY) > 0.001) throw new Error('镜头视图人物平移改变了脚底高度，角色被拖离地面。');
-  if (!(await toolbar.locator('[data-shot-actor-move-hint]').textContent())?.includes('直接拖动人物')) throw new Error('镜头构图栏没有显示人物平移提示。');
+  await page.waitForFunction(({ x, z }) => {
+    const raw = localStorage.getItem('pds.project.v1');
+    if (!raw) return false;
+    const project = JSON.parse(raw);
+    const shot = project.sequences?.[0]?.shots?.[0];
+    const actor = shot?.actors?.find((item) => item.id === 'actor-a');
+    if (!actor) return false;
+    const tolerance = 0.5 / (shot.fps || 24);
+    const zeroFrame = actor.path?.find((frame) => Math.abs(frame.time) <= tolerance);
+    const position = zeroFrame?.position ?? actor.transform?.position;
+    return position && Math.hypot(position.x - x, position.z - z) > 0.1;
+  }, { x: DEFAULT_ACTOR_A.x, z: DEFAULT_ACTOR_A.z }, { timeout: 5_000 });
+
+  const after = await persistedActorPosition();
+  if (!after || Math.hypot(after.x - DEFAULT_ACTOR_A.x, after.z - DEFAULT_ACTOR_A.z) < 0.1) throw new Error('镜头视图拖动人物没有产生实际 X/Z 平移。');
+  if (Math.abs(after.y - DEFAULT_ACTOR_A.y) > 0.001) throw new Error('镜头视图人物平移改变了脚底高度，角色被拖离地面。');
 
   await page.getByRole('button', { name: '撤销', exact: true }).click();
-  await page.waitForTimeout(120);
-  const undoX = Number(await actorPositionInput('X').inputValue());
-  const undoY = Number(await actorPositionInput('Y').inputValue());
-  const undoZ = Number(await actorPositionInput('Z').inputValue());
-  if (Math.abs(undoX - beforeX) > 0.01 || Math.abs(undoY - beforeY) > 0.01 || Math.abs(undoZ - beforeZ) > 0.01) throw new Error('镜头视图人物拖动没有形成单次可撤销编辑。');
+  await page.waitForFunction(({ x, y, z }) => {
+    const raw = localStorage.getItem('pds.project.v1');
+    if (!raw) return false;
+    const project = JSON.parse(raw);
+    const shot = project.sequences?.[0]?.shots?.[0];
+    const actor = shot?.actors?.find((item) => item.id === 'actor-a');
+    if (!actor) return false;
+    const tolerance = 0.5 / (shot.fps || 24);
+    const zeroFrame = actor.path?.find((frame) => Math.abs(frame.time) <= tolerance);
+    const position = zeroFrame?.position ?? actor.transform?.position;
+    return position && Math.abs(position.x - x) < 0.01 && Math.abs(position.y - y) < 0.01 && Math.abs(position.z - z) < 0.01;
+  }, DEFAULT_ACTOR_A, { timeout: 5_000 });
+
+  const undone = await persistedActorPosition();
+  if (!undone || Math.abs(undone.x - DEFAULT_ACTOR_A.x) > 0.01 || Math.abs(undone.y - DEFAULT_ACTOR_A.y) > 0.01 || Math.abs(undone.z - DEFAULT_ACTOR_A.z) > 0.01) throw new Error('镜头视图人物拖动没有形成单次可撤销编辑。');
 
   await page.screenshot({ path: path.join(ARTIFACT_DIR, 'shot-composition-guides-and-actor-move.png'), fullPage: true });
   await page.getByRole('button', { name: '导演视图', exact: true }).click();
