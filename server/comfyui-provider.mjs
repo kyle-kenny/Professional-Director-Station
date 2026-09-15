@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { renderStageControlMaps } from './control-map-raster.mjs';
 
 const DEFAULT_TIMEOUT_MS = 240_000;
 const DEFAULT_POLL_MS = 600;
@@ -65,6 +66,13 @@ function workflowFromParameters(parameters) {
   return structuredClone(parsed);
 }
 
+function optionalImageNode(workflow, nodeId, label, inputName = 'image') {
+  const id = String(nodeId ?? '').trim();
+  if (!id) return undefined;
+  requiredNode(workflow, id, label);
+  return { nodeId: id, inputName: String(inputName || 'image') };
+}
+
 export function prepareComfyWorkflow(request, { allowRemote = false } = {}) {
   if (!request || request.schema !== 'pds-ai-generation-1' || request.task !== 'storyboard') throw new Error('ComfyUI bridge only accepts PDS storyboard generation requests.');
   const parameters = request.profile?.parameters ?? {};
@@ -81,8 +89,8 @@ export function prepareComfyWorkflow(request, { allowRemote = false } = {}) {
   const seedNode = optionalNode(workflow, parameters.seedNodeId, 'Seed');
   if (seedNode) seedNode.inputs[String(parameters.seedInputName || 'seed')] = seed;
 
-  const width = boundedInt(parameters.width, 1280, 64, 8192);
-  const height = boundedInt(parameters.height, 720, 64, 8192);
+  const width = boundedInt(parameters.width, 1280, 64, 4096);
+  const height = boundedInt(parameters.height, 720, 64, 4096);
   const sizeNode = optionalNode(workflow, parameters.sizeNodeId, 'Latent size');
   if (sizeNode) {
     sizeNode.inputs[String(parameters.widthInputName || 'width')] = width;
@@ -102,6 +110,11 @@ export function prepareComfyWorkflow(request, { allowRemote = false } = {}) {
     baseUrl,
     workflow,
     outputNodeId: String(parameters.outputNodeId ?? '').trim() || undefined,
+    controlImageNodes: {
+      pose: optionalImageNode(workflow, parameters.poseImageNodeId, 'PDS Pose image', parameters.poseImageInputName),
+      depth: optionalImageNode(workflow, parameters.depthImageNodeId, 'PDS Depth image', parameters.depthImageInputName),
+      lineart: optionalImageNode(workflow, parameters.lineartImageNodeId, 'PDS Lineart image', parameters.lineartImageInputName),
+    },
     seed,
     width,
     height,
@@ -129,11 +142,45 @@ async function readJsonResponse(response, label) {
   return payload;
 }
 
+function safeFileStem(value) {
+  return String(value ?? 'shot').replace(/[^a-zA-Z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80) || 'shot';
+}
+
+async function uploadControlImage(fetchImpl, baseUrl, bytes, filename, signal) {
+  const form = new FormData();
+  form.append('image', new Blob([bytes], { type: 'image/png' }), filename);
+  form.append('type', 'input');
+  form.append('subfolder', 'pds-control');
+  form.append('overwrite', 'true');
+  const response = await fetchImpl(`${baseUrl}/upload/image`, { method: 'POST', body: form, signal });
+  const payload = await readJsonResponse(response, 'ComfyUI /upload/image');
+  const name = String(payload?.name ?? filename).trim();
+  if (!name) throw new Error('ComfyUI /upload/image did not return an image name.');
+  const subfolder = String(payload?.subfolder ?? 'pds-control').replace(/^\/+|\/+$/g, '');
+  return subfolder ? `${subfolder}/${name}` : name;
+}
+
+async function attachStageControlMaps(fetchImpl, prepared, request, signal) {
+  const active = Object.entries(prepared.controlImageNodes).filter(([, config]) => Boolean(config));
+  if (!active.length) return [];
+  const maps = renderStageControlMaps(request.controls, prepared.width, prepared.height);
+  const stem = `${safeFileStem(request.source?.shotId)}__f${String(request.source?.frame ?? 0).padStart(6, '0')}`;
+  const uploaded = [];
+  for (const [kind, config] of active) {
+    const filename = `${stem}__${kind}.png`;
+    const imageName = await uploadControlImage(fetchImpl, prepared.baseUrl, maps[kind], filename, signal);
+    prepared.workflow[config.nodeId].inputs[config.inputName] = imageName;
+    uploaded.push({ kind, nodeId: config.nodeId, imageName, filename });
+  }
+  return uploaded;
+}
+
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export async function runComfyUiGeneration(request, options = {}) {
   const fetchImpl = options.fetchImpl ?? fetch;
   const prepared = prepareComfyWorkflow(request, { allowRemote: options.allowRemote ?? false });
+  const uploadedControlMaps = await attachStageControlMaps(fetchImpl, prepared, request, options.signal);
   const clientId = `pds-${randomUUID()}`;
   const submitResponse = await fetchImpl(`${prepared.baseUrl}/prompt`, {
     method: 'POST',
@@ -168,6 +215,7 @@ export async function runComfyUiGeneration(request, options = {}) {
         mimeType: mediaResponse.headers.get('content-type') || 'image/png',
         jobId: promptId,
         seed: prepared.seed,
+        controlMaps: uploadedControlMaps,
       };
     }
     if (record?.status?.completed === true) throw new Error(`ComfyUI job ${promptId} completed without an image output.`);
