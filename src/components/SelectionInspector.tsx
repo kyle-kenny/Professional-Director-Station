@@ -6,6 +6,7 @@ import type { DirectorLight, Transform, Vec3 } from '../domain/model';
 import { useDirectorStore } from '../store/directorStore';
 import { setActiveShotSensorWidthMm } from '../store/frameRegistry';
 import { applyPresetPose } from '../store/poseRegistry';
+import { duplicateStageAssetInstance, removeStageAssetInstance, setStageAssetShadow, setStageAssetTransform, setStageAssetVisibility } from '../store/stageAssetRegistry';
 import { sampleActorTransform, sampleCamera, sampleLight } from '../utils/animation';
 import '../selection-inspector.css';
 
@@ -20,6 +21,7 @@ const shadowSupported = (light: DirectorLight) => light.type === 'directional' |
 const intensityLabel = (light: DirectorLight) => light.type === 'point' || light.type === 'spot' ? '强度（坎德拉 cd）' : light.type === 'area' ? '强度（尼特 nit）' : '强度（相对值）';
 const lightTypeZh = { directional: '平行光', point: '点光', spot: '聚光灯', area: '区域光', ambient: '环境光' } as const;
 const ageGroupZh = { child: '儿童', teen: '青少年', adult: '成年', elderly: '老年' } as const;
+const stageKindZh = { environment: '环境', prop: '道具', vehicle: '车辆' } as const;
 const poseCategories = ['站立', '移动', '坐蹲', '跳跃', '武器/动作', '互动'] as const;
 const cameraKeyframeTime = (id?: string) => id?.startsWith('camera-keyframe:') ? Number(id.slice('camera-keyframe:'.length)) : undefined;
 
@@ -36,20 +38,27 @@ export function SelectionInspector() {
   const updateLightVector = useDirectorStore((state) => state.updateLightVector);
   const setLightShadow = useDirectorStore((state) => state.setLightCastShadow);
   const actor = shot.actors.find((item) => item.id === selected);
+  const stageAsset = shot.stageAssets.find((item) => item.id === selected);
   const light = shot.lights.find((item) => item.id === selected);
   const isCamera = selected === shot.camera.id;
   const keyframeTime = cameraKeyframeTime(selected);
   const editable = shot.status !== 'APPROVED';
 
-  if (!actor && !light && !isCamera && keyframeTime === undefined) return <Inspector />;
+  if (!actor && !stageAsset && !light && !isCamera && keyframeTime === undefined) return <Inspector />;
 
   const actorTransform = actor ? sampleActorTransform(actor, playhead) : undefined;
   const sampledLight = light ? sampleLight(light, playhead) : undefined;
   const camera = sampleCamera(shot.camera, playhead);
   const editActor = (field: keyof Transform, axis: keyof Vec3, value: number) => actor && editActorTransform(actor.id, field, axis, value);
-  const kind = actor ? 'actor' : light ? 'light' : isCamera ? 'camera' : 'camera-keyframe';
-  const title = actor?.name ?? light?.name ?? (isCamera ? shot.camera.name : `机位 ${keyframeTime?.toFixed(2)} 秒`);
-  const typeLabel = actor ? '人物主体' : light ? lightTypeZh[light.type] : isCamera ? '摄影机' : '摄影机机位';
+  const editStageAsset = (field: keyof Transform, axis: keyof Vec3, value: number) => {
+    if (!stageAsset) return;
+    const transform = structuredClone(stageAsset.transform);
+    transform[field][axis] = field === 'scale' ? Math.max(0.001, value) : value;
+    setStageAssetTransform(stageAsset.id, transform);
+  };
+  const kind = actor ? 'actor' : stageAsset ? 'stage-asset' : light ? 'light' : isCamera ? 'camera' : 'camera-keyframe';
+  const title = actor?.name ?? stageAsset?.name ?? light?.name ?? (isCamera ? shot.camera.name : `机位 ${keyframeTime?.toFixed(2)} 秒`);
+  const typeLabel = actor ? '人物主体' : stageAsset ? `Stage ${stageKindZh[stageAsset.kind]}` : light ? lightTypeZh[light.type] : isCamera ? '摄影机' : '摄影机机位';
 
   return <aside className="inspector selection-inspector" data-selection-inspector data-selection-kind={kind}>
     <section className="selection-inspector-header">
@@ -77,6 +86,20 @@ export function SelectionInspector() {
       </section>
       <section data-subject-rig><PoseEditorPanel actor={actor} /></section>
     </>}
+
+    {stageAsset && <section data-subject-properties="stage-asset">
+      <div className="section-title">主体属性 · {stageKindZh[stageAsset.kind]}</div>
+      <div className="meta">{stageAsset.asset.id}@{stageAsset.asset.version} · {stageAsset.asset.sourceFormat?.toUpperCase()} · SHA-256 {stageAsset.asset.contentHashSha256?.slice(0, 12) ?? '未记录'}…</div>
+      {axes.map((axis) => <NumberField disabled={!editable} key={`stage-p-${axis}`} label={`位置 ${axis.toUpperCase()}（米）`} value={stageAsset.transform.position[axis]} onChange={(value) => editStageAsset('position', axis, value)} />)}
+      {axes.map((axis) => <NumberField disabled={!editable} key={`stage-r-${axis}`} label={`旋转 ${axis.toUpperCase()}（°）`} value={radToDeg(stageAsset.transform.rotation[axis])} step={1} onChange={(value) => editStageAsset('rotation', axis, degToRad(value))} />)}
+      {axes.map((axis) => <NumberField disabled={!editable} key={`stage-s-${axis}`} label={`缩放 ${axis.toUpperCase()}`} value={stageAsset.transform.scale[axis]} step={0.05} onChange={(value) => editStageAsset('scale', axis, value)} />)}
+      <label className="toggle-field"><span>可见</span><input type="checkbox" disabled={!editable} checked={stageAsset.visible} onChange={(event) => setStageAssetVisibility(stageAsset.id, event.target.checked)} /></label>
+      <label className="toggle-field"><span>投射阴影</span><input type="checkbox" disabled={!editable} checked={stageAsset.castShadow} onChange={(event) => setStageAssetShadow(stageAsset.id, 'castShadow', event.target.checked)} /></label>
+      <label className="toggle-field"><span>接收阴影</span><input type="checkbox" disabled={!editable} checked={stageAsset.receiveShadow} onChange={(event) => setStageAssetShadow(stageAsset.id, 'receiveShadow', event.target.checked)} /></label>
+      <button className="wide" disabled={!editable} onClick={() => duplicateStageAssetInstance(stageAsset.id)}>复制实例</button>
+      <button className="wide danger" disabled={!editable} onClick={() => removeStageAssetInstance(stageAsset.id)}>从当前镜头删除</button>
+      <div className="meta">W 移动 · E 旋转 · R 缩放。Transform 以 PDS 米制写入 Shot；该实例会直接参与 1.8 Scene Depth / Normal / Mask / Edge。</div>
+    </section>}
 
     {light && sampledLight && <section data-subject-properties="light">
       <div className="section-title">主体属性 · {lightTypeZh[light.type]}</div>
