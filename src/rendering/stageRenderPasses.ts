@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { Shot } from '../domain/model';
 import { instantiateDirectorCharacter, disposeCharacterInstance } from '../characters/characterLoader';
+import { instantiateStageAsset, disposeStageAssetInstance } from '../assets/stageAssetLoader';
 import { applyActorRigAtTime } from '../characters/rigRuntime';
 import { sampleActorTransform, sampleCamera } from '../utils/animation';
 import { focalLengthToVerticalFovDeg } from '../utils/math';
@@ -112,7 +113,9 @@ function replaceWithMaskMaterials(scene: THREE.Scene) {
     if (!mesh.isMesh || !mesh.visible || object.userData.selectionProxy) return;
     originals.set(mesh, mesh.material);
     const actorId = String(object.userData.actorId ?? '').trim();
-    const color = actorId ? deterministicMaskColor(actorId) : object.userData.stageGround ? new THREE.Color(0.22, 0.22, 0.22) : new THREE.Color(0.85, 0.85, 0.85);
+    const stageAssetId = String(object.userData.stageAssetId ?? '').trim();
+    const entityId = actorId || stageAssetId;
+    const color = entityId ? deterministicMaskColor(entityId) : object.userData.stageGround ? new THREE.Color(0.22, 0.22, 0.22) : new THREE.Color(0.85, 0.85, 0.85);
     const material = new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide, toneMapped: false });
     temporary.push(material);
     mesh.material = material;
@@ -159,6 +162,7 @@ export async function captureStageRenderPasses(shot: Shot, requestedFrame: numbe
   scene.add(floor);
 
   const characterRoots: THREE.Group[] = [];
+  const stageAssetRoots: THREE.Group[] = [];
   try {
     await Promise.all(shot.actors.map(async (actor) => {
       const transform = sampleActorTransform(actor, time);
@@ -175,6 +179,13 @@ export async function captureStageRenderPasses(shot: Shot, requestedFrame: numbe
       characterRoots.push(root);
       scene.add(anchor);
     }));
+
+    await Promise.all(shot.stageAssets.filter((instance) => instance.visible).map(async (instance) => {
+      const { root } = await instantiateStageAsset(instance);
+      stageAssetRoots.push(root);
+      scene.add(root);
+    }));
+
     scene.updateMatrixWorld(true);
 
     const depthMaterial = new THREE.MeshDepthMaterial({ depthPacking: THREE.BasicDepthPacking, side: THREE.DoubleSide });
@@ -203,13 +214,21 @@ export async function captureStageRenderPasses(shot: Shot, requestedFrame: numbe
       sceneMask: passImage('sceneMask', mask.base64, width, height),
       sceneEdge: passImage('sceneEdge', edgeBase64, width, height),
     };
-    const bundleHashSha256 = sha256Text(canonicalJson({ shotId: shot.id, frame, width, height, hashes: Object.fromEntries(stageRenderPassKinds.map((kind) => [kind, passes[kind].contentHashSha256])) }));
+    const bundleHashSha256 = sha256Text(canonicalJson({
+      shotId: shot.id,
+      frame,
+      width,
+      height,
+      stageAssets: shot.stageAssets.filter((item) => item.visible).map((item) => ({ id: item.id, asset: `${item.asset.id}@${item.asset.version}`, transform: item.transform })),
+      hashes: Object.fromEntries(stageRenderPassKinds.map((kind) => [kind, passes[kind].contentHashSha256])),
+    }));
     depthMaterial.dispose();
     normalMaterial.dispose();
     return { schema: 'pds-stage-render-passes-1', shotId: shot.id, frame, width, height, bundleHashSha256, passes };
   } finally {
     scene.overrideMaterial = null;
     characterRoots.forEach((root) => disposeCharacterInstance(root));
+    stageAssetRoots.forEach((root) => disposeStageAssetInstance(root));
     floor.geometry.dispose();
     (floor.material as THREE.Material).dispose();
     renderer.dispose();
