@@ -1,5 +1,6 @@
 import { aiModelProfileSchema, type AiGeneratedMedia, type AiModelProfile, type AiSceneCandidate } from '../domain/ai';
 import type { DirectorProject, Shot } from '../domain/model';
+import type { StageRenderPassBundle } from '../rendering/stageRenderPasses';
 import { requirePermission } from '../collab/authorization';
 import { getSessionIdentity } from '../collab/sessionIdentity';
 import { timeToFrame } from '../editorial/timelineEngine';
@@ -70,6 +71,8 @@ export async function generateAiMedia(input: {
   negativePrompt?: string;
   runtimeToken?: string;
   parameters?: Record<string, string | number | boolean>;
+  /** Transient browser-rendered controls; deliberately excluded from persisted profile parameters. */
+  renderPasses?: StageRenderPassBundle;
 }): Promise<AiGeneratedMedia> {
   const identity = getSessionIdentity();
   requirePermission(identity.role, 'project:edit');
@@ -79,11 +82,12 @@ export async function generateAiMedia(input: {
   const profile = project.ai.profiles.find((item) => item.id === input.profileId);
   if (!profile) throw new Error(`AI profile ${input.profileId} not found.`);
   const frame = timeToFrame(state.playhead, shot.fps);
-  const request = buildGenerationRequest(project, shot, input.task, frame, profile, input.prompt, input.negativePrompt ?? '', input.parameters ?? {});
+  const request = buildGenerationRequest(project, shot, input.task, frame, profile, input.prompt, input.negativePrompt ?? '', input.parameters ?? {}, input.renderPasses);
+  const requestTimeoutMs = typeof request.profile.parameters.requestTimeoutMs === 'number' ? request.profile.parameters.requestTimeoutMs : undefined;
   try {
     const generated = profile.provider === 'local-structural'
       ? generateLocalStructuralStoryboard(request)
-      : await invokePdsAiEndpoint(profile, request, input.runtimeToken);
+      : await invokePdsAiEndpoint(profile, request, input.runtimeToken, fetch, requestTimeoutMs);
     if (generated.bytes && generated.record.uri?.startsWith('pds://ai/')) await putAiGeneratedMedia(generated.record.uri, generated.bytes, generated.record.mimeType);
     commitProject((next) => {
       if (next.ai.outputs.some((item) => item.id === generated.record.id)) throw new Error(`Generated output ${generated.record.id} already exists.`);

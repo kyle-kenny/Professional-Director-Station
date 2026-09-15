@@ -1,5 +1,6 @@
 import { aiModelProfileSchema, type AiGeneratedMedia, type AiModelProfile, type AiModelProfileSnapshot } from '../domain/ai';
 import type { DirectorProject, Shot } from '../domain/model';
+import type { StageRenderPassBundle } from '../rendering/stageRenderPasses';
 import { analyzeFrameControls, controlBundleHash, type AiControlBundle } from './controlAnalysis';
 import { canonicalJson, sha256Bytes, sha256Text } from '../utils/sha256';
 
@@ -14,6 +15,8 @@ export type AiGenerationRequest = {
   promptHashSha256: string;
   controls: AiControlBundle;
   controlSequence?: AiControlBundle[];
+  /** Browser-rendered scene passes are transient request payloads. They are never persisted in the project/model profile. */
+  renderPasses?: StageRenderPassBundle;
   controlHashSha256: string;
 };
 
@@ -42,15 +45,22 @@ export function snapshotProfile(profile: AiModelProfile, parameterOverrides: Rec
   };
 }
 
-export function buildGenerationRequest(project: DirectorProject, shot: Shot, task: 'storyboard' | 'video', frame: number, profile: AiModelProfile, prompt: string, negativePrompt = '', parameterOverrides: Record<string, string | number | boolean> = {}): AiGenerationRequest {
+export function buildGenerationRequest(project: DirectorProject, shot: Shot, task: 'storyboard' | 'video', frame: number, profile: AiModelProfile, prompt: string, negativePrompt = '', parameterOverrides: Record<string, string | number | boolean> = {}, renderPasses?: StageRenderPassBundle): AiGenerationRequest {
   if (!profile.enabled) throw new Error(`AI profile ${profile.id} is disabled.`);
   if (!profile.tasks.includes(task)) throw new Error(`AI profile ${profile.id} does not support ${task}.`);
   const controls = analyzeFrameControls(shot, frame);
+  if (renderPasses) {
+    if (task !== 'storyboard') throw new Error('Full Stage render passes currently apply to storyboard generation only.');
+    if (renderPasses.shotId !== shot.id || renderPasses.frame !== controls.frame) throw new Error('Stage render passes must match the exact Shot and frame used by the generation request.');
+  }
   const controlSequence = task === 'video' ? buildVideoControlSequence(shot) : undefined;
   const cleanPrompt = prompt.trim();
   const cleanNegative = negativePrompt.trim();
   const profileSnapshot = snapshotProfile(profile, parameterOverrides);
-  const controlHashSha256 = task === 'video' ? sha256Text(canonicalJson(controlSequence)) : controlBundleHash(controls);
+  const baseControlHashSha256 = task === 'video' ? sha256Text(canonicalJson(controlSequence)) : controlBundleHash(controls);
+  const controlHashSha256 = renderPasses
+    ? sha256Text(canonicalJson({ controls: baseControlHashSha256, renderPasses: renderPasses.bundleHashSha256 }))
+    : baseControlHashSha256;
   return {
     schema: 'pds-ai-generation-1',
     task,
@@ -68,6 +78,7 @@ export function buildGenerationRequest(project: DirectorProject, shot: Shot, tas
     promptHashSha256: sha256Text(canonicalJson({ prompt: cleanPrompt, negativePrompt: cleanNegative })),
     controls,
     controlSequence,
+    renderPasses,
     controlHashSha256,
   };
 }

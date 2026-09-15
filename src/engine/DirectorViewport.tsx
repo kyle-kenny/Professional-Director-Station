@@ -11,6 +11,7 @@ import { sampleActorTransform, sampleCamera, sampleLight } from '../utils/animat
 import type { Actor, DirectorLight, Vec3 } from '../domain/model';
 import { humanoidJointIds, rigControlIds, type HumanoidJointId, type RigControlId } from '../domain/humanoidRig';
 import { instantiateDirectorCharacter } from '../characters/characterLoader';
+import { applyStageAssetInstanceState, disposeStageAssetInstance, instantiateStageAsset } from '../assets/stageAssetLoader';
 import {
   applyActorRigAtTime,
   applyAdditiveJointRotationToBone,
@@ -22,6 +23,7 @@ import {
   sampleActorRig,
 } from '../characters/rigRuntime';
 import { setActorHeadLookAt, setActorIkPole, setActorIkTarget, setActorJointRotation } from '../store/poseRegistry';
+import { setStageAssetTransform } from '../store/stageAssetRegistry';
 import { deleteSceneSelection, setCameraEntityPose, setCameraKeyframeEntityPose, setLightEntityPose } from '../store/sceneObjectRegistry';
 import {
   buildCameraEntity,
@@ -83,6 +85,16 @@ function lightCanRotate(light?: DirectorLight) {
   return light?.type === 'spot' || light?.type === 'area' || light?.type === 'directional';
 }
 
+function resolveStageAssetId(object?: THREE.Object3D | null): string | undefined {
+  let current = object ?? undefined;
+  while (current) {
+    const id = current.userData.stageAssetId;
+    if (typeof id === 'string' && id) return id;
+    current = current.parent ?? undefined;
+  }
+  return undefined;
+}
+
 type LightRuntime = { light: THREE.Light; entity: THREE.Group; target?: THREE.Object3D };
 type CharacterRuntime = {
   actorId: string;
@@ -109,17 +121,18 @@ type Runtime = {
   content: THREE.Group;
   actorObjects: Map<string, THREE.Group>;
   characters: Map<string, CharacterRuntime>;
+  stageAssetObjects: Map<string, THREE.Group>;
   lightObjects: Map<string, THREE.Group>;
   lights: Map<string, LightRuntime>;
   raf: number;
 };
 
-type CharacterLoadState = { loaded: number; total: number; failed: number };
+type LoadState = { loaded: number; total: number; failed: number };
 
 function disposeSceneContent(root: THREE.Object3D) {
   root.traverse((object) => {
     const mesh = object as THREE.Mesh;
-    if (mesh.geometry && !object.userData.sharedCharacterGeometry) mesh.geometry.dispose();
+    if (mesh.geometry && !object.userData.sharedCharacterGeometry && !object.userData.sharedStageAssetGeometry) mesh.geometry.dispose();
     const material = mesh.material as THREE.Material | THREE.Material[] | undefined;
     if (Array.isArray(material)) material.forEach((entry) => entry.dispose());
     else material?.dispose?.();
@@ -195,7 +208,8 @@ export function DirectorViewport() {
   const runtime = useRef<Runtime | null>(null);
   const [viewMode, setViewMode] = useState<'director' | 'shot'>('director');
   const [guideVisibility, setGuideVisibility] = useState<DirectorGuideVisibility>({ ...defaultDirectorGuideVisibility });
-  const [characterLoad, setCharacterLoad] = useState<CharacterLoadState>({ loaded: 0, total: 0, failed: 0 });
+  const [characterLoad, setCharacterLoad] = useState<LoadState>({ loaded: 0, total: 0, failed: 0 });
+  const [stageAssetLoad, setStageAssetLoad] = useState<LoadState>({ loaded: 0, total: 0, failed: 0 });
   const [sceneNotice, setSceneNotice] = useState('');
   const viewModeRef = useRef(viewMode);
   const guideVisibilityRef = useRef(guideVisibility);
@@ -217,14 +231,17 @@ export function DirectorViewport() {
   const selectedLight = shot.lights.find((light) => light.id === selectedObjectId);
   const selectedIsLight = Boolean(selectedLight);
   const selectedIsActor = shot.actors.some((actor) => actor.id === selectedObjectId);
+  const selectedIsStageAsset = shot.stageAssets.some((instance) => instance.id === selectedObjectId);
   const selectedIsCamera = selectedObjectId === shot.camera.id;
   const selectedCameraKeyframeTime = parseCameraKeyframeSelectionId(selectedObjectId);
   const selectedIsCameraKeyframe = selectedCameraKeyframeTime !== undefined;
-  const selectedCanRotate = selectedIsActor || selectedIsCamera || selectedIsCameraKeyframe || lightCanRotate(selectedLight);
+  const selectedCanRotate = selectedIsActor || selectedIsStageAsset || selectedIsCamera || selectedIsCameraKeyframe || lightCanRotate(selectedLight);
+  const selectedCanScale = selectedIsActor || selectedIsStageAsset;
   const shotEditable = shot.status !== 'APPROVED';
   const structureKey = useMemo(() => JSON.stringify({
     shot: shot.id,
     actors: shot.actors.map((actor) => [actor.id, actor.name, actor.demographics.sex, actor.demographics.ageGroup, actor.demographics.heightM]),
+    stageAssets: shot.stageAssets.map((instance) => [instance.id, instance.asset.id, instance.asset.version, instance.asset.contentHashSha256]),
     lights: shot.lights.map((light) => [light.id, light.type]),
     camera: shot.camera.id,
     cameraPath: shot.camera.path.map((frame) => frame.time),
@@ -253,11 +270,11 @@ export function DirectorViewport() {
       if (poseEnabled) return;
       if (event.key.toLowerCase() === 'w') setTransformMode('translate');
       else if (event.key.toLowerCase() === 'e' && selectedCanRotate) setTransformMode('rotate');
-      else if (event.key.toLowerCase() === 'r' && selectedIsActor) setTransformMode('scale');
+      else if (event.key.toLowerCase() === 'r' && selectedCanScale) setTransformMode('scale');
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [poseEnabled, selectedCanRotate, selectedIsActor, setTransformMode, shotEditable]);
+  }, [poseEnabled, selectedCanRotate, selectedCanScale, setTransformMode, shotEditable]);
 
   useEffect(() => {
     if (!mountRef.current) return;
@@ -306,6 +323,7 @@ export function DirectorViewport() {
     scene.add(content);
     const actorObjects = new Map<string, THREE.Group>();
     const characters = new Map<string, CharacterRuntime>();
+    const stageAssetObjects = new Map<string, THREE.Group>();
     const lightObjects = new Map<string, THREE.Group>();
     const lights = new Map<string, LightRuntime>();
     const cameraKeyframeObjects = new Map<string, THREE.Group>();
@@ -352,14 +370,15 @@ export function DirectorViewport() {
         return;
       }
       const data = resolveSceneEntityData(object);
+      const stageAssetId = resolveStageAssetId(object);
       const actorId = data.actorId;
       const rigControlId = data.rigControlId as RigControlId | undefined;
       const rigJointId = data.rigJointId as HumanoidJointId | undefined;
       if (actorId && rigControlId) { selectObject(actorId); selectRigControl(actorId, rigControlId); setSceneNotice(''); return; }
       if (actorId && rigJointId) { selectObject(actorId); selectRigJoint(actorId, rigJointId); setSceneNotice(''); return; }
       if (data.cameraKeyframeId) { selectObject(data.cameraKeyframeId); setSceneNotice('已选中摄影机机位。W 移动 · E 旋转 · Delete 删除机位。'); return; }
-      const id = actorId ?? data.lightId ?? data.cameraId;
-      if (id) { selectObject(id); setSceneNotice(''); }
+      const id = actorId ?? stageAssetId ?? data.lightId ?? data.cameraId;
+      if (id) { selectObject(id); setSceneNotice(stageAssetId ? '已选中 Stage 资产。W 移动 · E 旋转 · R 缩放 · Delete 删除。' : ''); }
     };
     renderer.domElement.addEventListener('pointerdown', onPointerDown);
 
@@ -394,6 +413,9 @@ export function DirectorViewport() {
         runtime.current?.cameraHelper?.update();
         return;
       }
+
+      const stageAssetId = resolveStageAssetId(object);
+      if (stageAssetId) return;
 
       const actorId = data.actorId;
       if (!actorId) return;
@@ -432,6 +454,15 @@ export function DirectorViewport() {
       const object = transform.object;
       if (!object || useDirectorStore.getState().getActiveShot().status === 'APPROVED') return;
       const data = resolveSceneEntityData(object);
+      const stageAssetId = resolveStageAssetId(object);
+      if (stageAssetId) {
+        setStageAssetTransform(stageAssetId, {
+          position: { x: object.position.x, y: object.position.y, z: object.position.z },
+          rotation: { x: object.rotation.x, y: object.rotation.y, z: object.rotation.z },
+          scale: { x: object.scale.x, y: object.scale.y, z: object.scale.z },
+        });
+        return;
+      }
       const actorId = data.actorId;
       const control = data.rigControlId as RigControlId | undefined;
       const joint = data.rigJointId as HumanoidJointId | undefined;
@@ -519,7 +550,7 @@ export function DirectorViewport() {
       raf = requestAnimationFrame(animate);
     };
     animate();
-    runtime.current = { scene, renderer, editorCamera, shotCamera, controls, transform, content, actorObjects, characters, lightObjects, lights, cameraKeyframeObjects, directorGuides, grid, worldAxes, structureGuideRoot, raf };
+    runtime.current = { scene, renderer, editorCamera, shotCamera, controls, transform, content, actorObjects, characters, stageAssetObjects, lightObjects, lights, cameraKeyframeObjects, directorGuides, grid, worldAxes, structureGuideRoot, raf };
     return () => {
       cancelAnimationFrame(raf);
       ro.disconnect();
@@ -554,6 +585,7 @@ export function DirectorViewport() {
     r.content.clear();
     r.actorObjects.clear();
     r.characters.clear();
+    r.stageAssetObjects.clear();
     r.lightObjects.clear();
     r.lights.clear();
     r.cameraKeyframeObjects.clear();
@@ -563,6 +595,7 @@ export function DirectorViewport() {
     const currentShot = useDirectorStore.getState().getActiveShot();
     const time = useDirectorStore.getState().playhead;
     setCharacterLoad({ loaded: 0, total: currentShot.actors.length, failed: 0 });
+    setStageAssetLoad({ loaded: 0, total: currentShot.stageAssets.length, failed: 0 });
     for (const actor of currentShot.actors) {
       const anchor = new THREE.Group();
       anchor.name = actor.name;
@@ -586,6 +619,18 @@ export function DirectorViewport() {
       }).catch((error) => {
         console.error(`角色 ${actor.name} 加载失败`, error);
         if (!cancelled) setCharacterLoad((state) => ({ ...state, failed: state.failed + 1 }));
+      });
+    }
+
+    for (const instance of currentShot.stageAssets) {
+      void instantiateStageAsset(instance).then(({ root }) => {
+        if (cancelled || runtime.current !== r) { disposeStageAssetInstance(root); return; }
+        r.content.add(root);
+        r.stageAssetObjects.set(instance.id, root);
+        setStageAssetLoad((state) => ({ ...state, loaded: state.loaded + 1 }));
+      }).catch((error) => {
+        console.error(`Stage 资产 ${instance.name} 加载失败`, error);
+        if (!cancelled) setStageAssetLoad((state) => ({ ...state, failed: state.failed + 1 }));
       });
     }
 
@@ -675,6 +720,10 @@ export function DirectorViewport() {
       if (character.root) applyActorRigAtTime(character.root, actor, playhead);
       updateRigMarkers(character, actor, poseEnabled && poseActorId === actor.id && viewMode === 'director', selectedControl, selectedJoint);
     }
+    for (const instance of shot.stageAssets) {
+      const root = r.stageAssetObjects.get(instance.id);
+      if (root) applyStageAssetInstanceState(root, instance);
+    }
     for (const source of shot.lights) {
       const item = r.lights.get(source.id);
       if (!item) continue;
@@ -744,21 +793,22 @@ export function DirectorViewport() {
     }
 
     let selected: THREE.Object3D | undefined;
-    if (selectedObjectId) selected = r.actorObjects.get(selectedObjectId) ?? r.lightObjects.get(selectedObjectId) ?? r.cameraKeyframeObjects.get(selectedObjectId);
+    if (selectedObjectId) selected = r.actorObjects.get(selectedObjectId) ?? r.stageAssetObjects.get(selectedObjectId) ?? r.lightObjects.get(selectedObjectId) ?? r.cameraKeyframeObjects.get(selectedObjectId);
     if (!selected && selectedIsCamera) selected = r.cameraEntity;
     if (!selected) return;
     let mode = transformMode;
-    if (mode === 'scale' && !selectedIsActor) mode = 'translate';
+    if (mode === 'scale' && !selectedCanScale) mode = 'translate';
     if (mode === 'rotate' && !selectedCanRotate) mode = 'translate';
     r.transform.camera = r.editorCamera;
     r.transform.setMode(mode);
     r.transform.setSpace(mode === 'rotate' ? 'local' : mode === 'translate' ? 'world' : 'local');
     r.transform.attach(selected);
-  }, [characterLoad.loaded, playhead, poseActorId, poseEnabled, selectedCanRotate, selectedControl, selectedIsActor, selectedIsCamera, selectedJoint, selectedObjectId, shot, shotEditable, transformMode, viewMode]);
+  }, [characterLoad.loaded, stageAssetLoad.loaded, playhead, poseActorId, poseEnabled, selectedCanRotate, selectedCanScale, selectedControl, selectedIsCamera, selectedJoint, selectedObjectId, shot, shotEditable, transformMode, viewMode]);
 
   const characterStatus = characterLoad.failed ? `开源角色：${characterLoad.loaded}/${characterLoad.total} 已加载 · ${characterLoad.failed} 个失败` : characterLoad.loaded === characterLoad.total && characterLoad.total > 0 ? `${uiZh.characterReady} · ${characterLoad.loaded}/${characterLoad.total} · Quaternius CC0` : `${uiZh.loadingCharacter} ${characterLoad.loaded}/${characterLoad.total}`;
+  const stageAssetStatus = stageAssetLoad.failed ? `Stage 资产：${stageAssetLoad.loaded}/${stageAssetLoad.total} 已加载 · ${stageAssetLoad.failed} 个失败` : stageAssetLoad.total === 0 ? 'Stage 资产：0' : stageAssetLoad.loaded === stageAssetLoad.total ? `Stage 资产：${stageAssetLoad.loaded}/${stageAssetLoad.total} 已加载` : `Stage 资产加载中 ${stageAssetLoad.loaded}/${stageAssetLoad.total}`;
   const rigSelection = selectedControl ? `控制器:${selectedControl}` : selectedJoint ? `关节:${selectedJoint}` : '无';
-  const objectHint = selectedIsCamera ? '摄影机实体 · W 移动 · E 旋转镜头方向 · 主摄影机受保护' : selectedIsCameraKeyframe ? '机位实体 · W 移动 · E 旋转 · Delete 删除' : selectedIsLight ? lightCanRotate(selectedLight) ? '灯具实体 · W 移动 · E 旋转灯头 · Delete 删除' : '灯具实体 · W 移动 · Delete 删除' : selectedIsActor ? '人物 · 导演视图可直接 W 移动 · E 旋转 · R 缩放 · Delete 删除' : '直接点击人物 / 灯具 / 摄影机 / 机位即可选中；点空白返回镜头级设置';
+  const objectHint = selectedIsCamera ? '摄影机实体 · W 移动 · E 旋转镜头方向 · 主摄影机受保护' : selectedIsCameraKeyframe ? '机位实体 · W 移动 · E 旋转 · Delete 删除' : selectedIsLight ? lightCanRotate(selectedLight) ? '灯具实体 · W 移动 · E 旋转灯头 · Delete 删除' : '灯具实体 · W 移动 · Delete 删除' : selectedIsStageAsset ? 'Stage 资产 · W 移动 · E 旋转 · R 缩放 · Delete 删除' : selectedIsActor ? '人物 · 导演视图可直接 W 移动 · E 旋转 · R 缩放 · Delete 删除' : '直接点击人物 / 环境 / 道具 / 车辆 / 灯具 / 摄影机 / 机位即可选中；点空白返回镜头级设置';
 
   return <div className="viewport-shell" data-pose-mode={poseEnabled ? 'active' : 'inactive'} data-rig-selection={rigSelection}>
     <div className="viewport-toolbar">
@@ -767,13 +817,14 @@ export function DirectorViewport() {
       <button className={viewMode === 'shot' ? 'active' : ''} onClick={() => setViewMode('shot')}>镜头视图</button>
       <button disabled={!shotEditable || !selectedIsActor || viewMode !== 'director'} className={poseEnabled && poseActorId === selectedObjectId ? 'active' : ''} onClick={() => selectedObjectId && setPoseEnabled(!(poseEnabled && poseActorId === selectedObjectId), selectedObjectId)}>{poseEnabled && poseActorId === selectedObjectId ? '退出人物调姿' : '人物调姿'}</button>
       {!poseEnabled && <>
-        <button disabled={!shotEditable || viewMode !== 'director' || !selectedObjectId} className={shotEditable && viewMode === 'director' && transformMode === 'translate' ? 'active' : ''} onClick={() => setTransformMode('translate')} title="W">{selectedIsActor ? '移动人物 W' : '移动 W'}</button>
+        <button disabled={!shotEditable || viewMode !== 'director' || !selectedObjectId} className={shotEditable && viewMode === 'director' && transformMode === 'translate' ? 'active' : ''} onClick={() => setTransformMode('translate')} title="W">{selectedIsActor ? '移动人物 W' : selectedIsStageAsset ? '移动资产 W' : '移动 W'}</button>
         <button disabled={!shotEditable || viewMode !== 'director' || !selectedCanRotate} className={shotEditable && viewMode === 'director' && selectedCanRotate && transformMode === 'rotate' ? 'active' : ''} onClick={() => setTransformMode('rotate')} title="E">旋转 E</button>
-        <button disabled={!shotEditable || viewMode !== 'director' || !selectedIsActor} className={shotEditable && viewMode === 'director' && selectedIsActor && transformMode === 'scale' ? 'active' : ''} onClick={() => setTransformMode('scale')} title="R">缩放 R</button>
+        <button disabled={!shotEditable || viewMode !== 'director' || !selectedCanScale} className={shotEditable && viewMode === 'director' && selectedCanScale && transformMode === 'scale' ? 'active' : ''} onClick={() => setTransformMode('scale')} title="R">缩放 R</button>
       </>}
       <span>{poseEnabled ? '调姿：蓝色=FK关节 · 绿色=IK目标 · 橙色=肘膝方向 · 黄色=注视目标' : shotEditable ? objectHint : uiZh.approvedReadonly}</span>
       {sceneNotice && <span className="chip">{sceneNotice}</span>}
       <span data-character-status>{characterStatus}</span>
+      <span data-stage-asset-status>{stageAssetStatus}</span>
       <span className="lens-readout">时间 {playhead.toFixed(2)} 秒 · {sampledCamera.focalLengthMm.toFixed(0)} 毫米 · f/{sampledCamera.aperture} · {shot.frameAspect.toFixed(3)}:1 · 曝光 EV {shot.exposureEv >= 0 ? '+' : ''}{shot.exposureEv.toFixed(1)}</span>
     </div>
     {viewMode === 'director' && <div className="director-guide-toolbar" aria-label="导演辅助线工具栏" data-director-guide-toolbar>

@@ -30,6 +30,23 @@ export const assetRefSchema = z.object({
 });
 export type AssetRef = z.infer<typeof assetRefSchema>;
 
+export const stageAssetKindSchema = z.enum(['environment', 'prop', 'vehicle']);
+export type StageAssetKind = z.infer<typeof stageAssetKindSchema>;
+export const stageAssetInstanceSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  kind: stageAssetKindSchema,
+  asset: assetRefSchema,
+  transform: transformSchema,
+  visible: z.boolean().default(true),
+  castShadow: z.boolean().default(true),
+  receiveShadow: z.boolean().default(true),
+}).superRefine((instance, ctx) => {
+  if (instance.asset.category !== instance.kind) ctx.addIssue({ code: 'custom', path: ['asset', 'category'], message: `Stage asset kind ${instance.kind} must match asset category ${instance.asset.category}.` });
+  if (!instance.asset.sourceFormat) ctx.addIssue({ code: 'custom', path: ['asset', 'sourceFormat'], message: 'Stage asset instances require an imported GLB or FBX source.' });
+});
+export type StageAssetInstance = z.infer<typeof stageAssetInstanceSchema>;
+
 export const actorSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
@@ -60,7 +77,7 @@ export const timelineMarkerSchema = z.object({ id: z.string().min(1), time: z.nu
 export type TimelineMarker = z.infer<typeof timelineMarkerSchema>;
 export const shotNoteSchema = z.object({ id: z.string().min(1), author: z.string().min(1), time: z.number().nonnegative(), text: z.string().min(1) });
 export type ShotNote = z.infer<typeof shotNoteSchema>;
-export const shotSchema = z.object({ id: z.string().min(1), name: z.string().min(1), status: z.enum(['WIP', 'REVIEW', 'APPROVED']).default('WIP'), version: z.number().int().positive().default(1), duration: z.number().positive().max(3600), fps: z.number().int().min(12).max(120), frameAspect: z.number().min(0.25).max(4).default(16 / 9), script: z.string().default(''), actors: z.array(actorSchema), camera: cameraSchema, exposureEv: z.number().min(-8).max(8).default(0), lights: z.array(lightSchema), audio: z.array(audioClipSchema), markers: z.array(timelineMarkerSchema).default([]), notes: z.array(shotNoteSchema).default([]) });
+export const shotSchema = z.object({ id: z.string().min(1), name: z.string().min(1), status: z.enum(['WIP', 'REVIEW', 'APPROVED']).default('WIP'), version: z.number().int().positive().default(1), duration: z.number().positive().max(3600), fps: z.number().int().min(12).max(120), frameAspect: z.number().min(0.25).max(4).default(16 / 9), script: z.string().default(''), actors: z.array(actorSchema), stageAssets: z.array(stageAssetInstanceSchema).default([]), camera: cameraSchema, exposureEv: z.number().min(-8).max(8).default(0), lights: z.array(lightSchema), audio: z.array(audioClipSchema), markers: z.array(timelineMarkerSchema).default([]), notes: z.array(shotNoteSchema).default([]) });
 export type Shot = z.infer<typeof shotSchema>;
 export const sequenceSchema = z.object({ id: z.string().min(1), name: z.string().min(1), shots: z.array(shotSchema).min(1, 'A Sequence must contain at least one Shot.') });
 export type Sequence = z.infer<typeof sequenceSchema>;
@@ -78,4 +95,4 @@ export const projectSchema = z.object({
   updatedAt: z.string().min(1),
 });
 export type DirectorProject = z.infer<typeof projectSchema>;
-export type WorkspaceMode = '3d' | 'floorplan' | 'frame' | 'timeline' | 'assets' | 'review' | 'pipeline' | 'ai';
+export type WorkspaceMode = '3d' | 'floorplan' | 'frame' | 'timeline' | 'assets' | 'review' | 'pipeline' | 'ai' | 'visual-stage';

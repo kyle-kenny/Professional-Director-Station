@@ -2,12 +2,14 @@ import { useEffect, useMemo, useState } from 'react';
 import type { AssetRef } from '../domain/model';
 import { useDirectorStore } from '../store/directorStore';
 import { registerProjectAsset, unregisterProjectAsset, uniqueAssetId, validateProjectAssetCandidate } from '../store/assetRegistry';
+import { addStageAssetInstance } from '../store/stageAssetRegistry';
 import { deleteAssetBinary, hasAssetBinary, putAssetBinary } from '../storage/assetBinaryStore';
 import { sha256Bytes } from '../utils/sha256';
 import { assetCategoryZh } from '../i18n/zhCN';
 import { MAX_ASSET_INGEST_BYTES, assetFormatFromFileName, assetSourceUnits, buildNormalizedAssetRef, inspectAssetBuffer, slugifyAssetId, type AssetInspection, type AssetSourceUnit } from '../utils/assetIngest';
 
 const categories: AssetRef['category'][] = ['character', 'environment', 'prop', 'vehicle'];
+const stageCategories = new Set<AssetRef['category']>(['environment', 'prop', 'vehicle']);
 type CacheState = 'checking' | 'cached' | 'missing' | 'unavailable';
 const cacheZh: Record<CacheState, string> = { checking: '检查中', cached: '已缓存', missing: '缓存缺失', unavailable: '不可用' };
 const severityZh = { info: '信息', warning: '警告', error: '错误' } as const;
@@ -22,6 +24,7 @@ const assetKey = (asset: Pick<AssetRef, 'id' | 'version'>) => `${asset.id}@${ass
 
 export function AssetLibraryPanel() {
   const assets = useDirectorStore((state) => state.project.assets);
+  const shot = useDirectorStore((state) => state.getActiveShot());
   const [file, setFile] = useState<File | null>(null);
   const [bytes, setBytes] = useState<ArrayBuffer | null>(null);
   const [inspection, setInspection] = useState<AssetInspection | null>(null);
@@ -78,9 +81,18 @@ export function AssetLibraryPanel() {
     } finally { setBusy(false); }
   };
 
+  const placeOnStage = (asset: AssetRef) => {
+    try {
+      const instance = addStageAssetInstance(asset.id, asset.version);
+      setMessage({ kind: 'ok', text: `${instance.name} 已放入 ${shot.name}，实例 ${instance.id} 已选中。切换到 3D 导演台即可移动 / 旋转 / 缩放。` });
+    } catch (error) {
+      setMessage({ kind: 'error', text: error instanceof Error ? error.message : '放入 Stage 失败。' });
+    }
+  };
+
   const removeAsset = (asset: AssetRef) => {
     unregisterProjectAsset(asset.id, asset.version);
-    setMessage({ kind: 'ok', text: `${asset.id}@${asset.version} 已移出资产库；本地二进制仍保留，可通过撤销恢复引用。` });
+    setMessage({ kind: 'ok', text: `${asset.id}@${asset.version} 已移出资产库；已存在的 Stage 实例保留资产快照，本地二进制也仍保留。` });
   };
 
   return <section className="asset-library">
@@ -117,11 +129,14 @@ export function AssetLibraryPanel() {
       {assets.map((asset) => {
         const state = cache[assetKey(asset)] ?? 'checking';
         const warnings = asset.diagnostics.filter((item) => item.severity === 'warning').length;
+        const stageCount = shot.stageAssets.filter((item) => item.asset.id === asset.id && item.asset.version === asset.version).length;
+        const canPlace = stageCategories.has(asset.category) && Boolean(asset.sourceFormat);
         return <div className="asset-card" key={assetKey(asset)}>
           <div><strong>{asset.name}</strong><span>{asset.id}@{asset.version}</span></div>
           <div className="asset-card-meta"><span>{assetCategoryZh[asset.category]}</span><span>{asset.sourceFormat?.toUpperCase() ?? '引用'}</span><span className={`cache-state ${state}`}>{cacheZh[state]}</span></div>
-          <div className="meta">{asset.sourceFileName ?? asset.uri}<br />SHA-256：{asset.contentHashSha256 ? `${asset.contentHashSha256.slice(0, 20)}…` : '旧版资产 / 无校验值'}<br />许可证：{asset.license} · 来源：{provenanceZh[asset.provenance?.source ?? 'unknown'] ?? asset.provenance?.source ?? '未知'} · 来源比例：{asset.sourceUnitScaleMeters ?? 1} 米/单位 → PDS 1 米/单位{warnings ? ` · ${warnings} 个警告` : ''}</div>
-          <button className="wide danger" onClick={() => removeAsset(asset)}>移出资产库（保留缓存）</button>
+          <div className="meta">{asset.sourceFileName ?? asset.uri}<br />SHA-256：{asset.contentHashSha256 ? `${asset.contentHashSha256.slice(0, 20)}…` : '旧版资产 / 无校验值'}<br />许可证：{asset.license} · 来源：{provenanceZh[asset.provenance?.source ?? 'unknown'] ?? asset.provenance?.source ?? '未知'} · 来源比例：{asset.sourceUnitScaleMeters ?? 1} 米/单位 → PDS 1 米/单位{warnings ? ` · ${warnings} 个警告` : ''}{stageCount ? ` · 当前镜头 ${stageCount} 个实例` : ''}</div>
+          {canPlace && <button className="wide" disabled={shot.status === 'APPROVED' || state !== 'cached'} onClick={() => placeOnStage(asset)}>放入当前镜头</button>}
+          <button className="wide danger" onClick={() => removeAsset(asset)}>移出资产库（保留缓存 / Stage 实例）</button>
         </div>;
       })}
     </div>

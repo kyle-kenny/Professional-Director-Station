@@ -1,7 +1,7 @@
 {
   "name": "professional-director-station",
   "private": true,
-  "version": "1.2.3",
+  "version": "1.9.0",
   "type": "module",
   "scripts": {
     "characters:install": "node scripts/install-character-assets.mjs",
@@ -12,19 +12,20 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:visual": "node scripts/visual-smoke-runner.mjs && node scripts/director-console-e2e.mjs && node scripts/composition-guides-e2e.mjs",
+    "test:visual": "node scripts/visual-smoke-runner.mjs && node scripts/director-console-e2e.mjs && node scripts/composition-guides-e2e.mjs && node scripts/stage-render-passes-e2e.mjs",
     "audit:static": "node scripts/quality-gate.mjs",
     "audit:windows": "node scripts/windows-smoke.mjs",
     "audit:collab": "node scripts/collaboration-smoke.mjs && node scripts/collaboration-server-smoke.mjs",
     "audit:pipeline": "node scripts/pipeline-smoke.mjs",
-    "audit:ai": "node scripts/ai-smoke.mjs",
+    "audit:ai": "node scripts/ai-smoke.mjs && node scripts/comfyui-smoke.mjs",
     "audit:characters": "node scripts/character-rig-smoke.mjs",
     "audit:localization": "node scripts/localization-smoke.mjs",
     "audit:director": "node scripts/director-console-smoke.mjs",
     "audit:deps": "npm audit --audit-level=high --omit=dev",
     "check": "npm run characters:install && npm run audit:static && npm run audit:windows && npm run audit:collab && npm run audit:pipeline && npm run audit:ai && npm run audit:characters && npm run audit:localization && npm run audit:director && npm run test && npm run build",
     "collab:server": "node server/collab-server.mjs",
-    "collab:token": "node scripts/issue-collab-token.mjs"
+    "collab:token": "node scripts/issue-collab-token.mjs",
+    "comfyui:bridge": "node server/comfyui-server.mjs"
   },
   "dependencies": {
     "lucide-react": "^1.41.0",

@@ -1,4 +1,4 @@
-import { Box, Cable, Download, Film, LayoutDashboard, Map, Package, Redo2, Sparkles, Undo2, Upload, Users } from 'lucide-react';
+import { ArrowLeftRight, Box, Cable, Download, Film, LayoutDashboard, Map, Package, Redo2, Sparkles, Undo2, Upload, Users } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { useDirectorStore } from '../store/directorStore';
 import { uiZh, workspaceZh } from '../i18n/zhCN';
@@ -13,6 +13,7 @@ export function TopBar() {
     <button className={mode === 'floorplan' ? 'active' : ''} onClick={() => setMode('floorplan')}><Map size={16}/>{workspaceZh.floorplan}</button>
     <button className={mode === 'frame' ? 'active' : ''} onClick={() => setMode('frame')}><LayoutDashboard size={16}/>{workspaceZh.frame}</button>
     <button className={mode === 'timeline' ? 'active' : ''} onClick={() => setMode('timeline')}><Film size={16}/>{workspaceZh.timeline}</button>
+    <button className={mode === 'visual-stage' ? 'active' : ''} onClick={() => setMode('visual-stage')}><ArrowLeftRight size={16}/>{workspaceZh['visual-stage']}</button>
     <button className={mode === 'assets' ? 'active' : ''} onClick={() => setMode('assets')}><Package size={16}/>{workspaceZh.assets}</button>
     <button className={mode === 'review' ? 'active' : ''} onClick={() => setMode('review')}><Users size={16}/>{workspaceZh.review}</button>
     <button className={mode === 'pipeline' ? 'active' : ''} onClick={() => setMode('pipeline')}><Cable size={16}/>{workspaceZh.pipeline}</button>

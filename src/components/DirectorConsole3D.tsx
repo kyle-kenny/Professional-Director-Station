@@ -8,6 +8,7 @@ import type { Vec3 } from '../domain/model';
 import { DirectorCompositionGuides } from './DirectorCompositionGuides';
 
 const lightTypeZh = { directional: '平行光', point: '点光', spot: '聚光灯', area: '区域光', ambient: '环境光' } as const;
+const stageKindZh = { environment: '环境', prop: '道具', vehicle: '车辆' } as const;
 
 function focusPlaneDistance(cameraPosition: Vec3, cameraTarget: Vec3, point: Vec3) {
   const fx = cameraTarget.x - cameraPosition.x;
@@ -63,7 +64,7 @@ export function DirectorConsole3D() {
 
     <div className="director-console-hud" aria-label="3D 导演台状态">
       <div><b>3D 导演台</b><span>{shot.name} · v{shot.version}</span></div>
-      <div><span>人物 {shot.actors.length}</span><span>灯光 {shot.lights.length}</span><span>{shot.status === 'APPROVED' ? '已批准 · 只读' : '可编辑'}</span></div>
+      <div><span>人物 {shot.actors.length}</span><span>场景资产 {shot.stageAssets.length}</span><span>灯光 {shot.lights.length}</span><span>{shot.status === 'APPROVED' ? '已批准 · 只读' : '可编辑'}</span></div>
     </div>
 
     <section className="director-camera-assistant" aria-label="摄影助手" data-camera-assistant>
@@ -85,10 +86,20 @@ export function DirectorConsole3D() {
       <div className="director-camera-optics-note">传感器 {camera.sensorWidthMm.toFixed(1)} × {depthOfField.sensorHeightMm.toFixed(1)} mm · CoC {depthOfField.circleOfConfusionMm.toFixed(3)} mm{selectedActorDistanceM !== undefined ? ` · 人物焦平面 ${formatDistanceM(selectedActorDistanceM)}` : ''}</div>
     </section>
 
-    <div className="director-light-dock" aria-label="灯光台">
+    <div className="director-light-dock" aria-label="灯光台与场景资产">
       <div className="director-light-dock-title">
-        <div><b>灯光台</b><span>在 3D 导演台直接摆灯 · 添加后自动选中，可用移动操纵器拖拽</span></div>
-        <div className="director-light-count">{shot.lights.length} 灯</div>
+        <div><b>现场控制</b><span>场景资产与灯具均可直接选择；环境 / 道具 / 车辆从资产库放入当前镜头</span></div>
+        <div className="director-light-count">{shot.stageAssets.length} 资产 · {shot.lights.length} 灯</div>
+      </div>
+
+      <div className="director-light-existing" aria-label="当前镜头场景资产" data-stage-asset-list>
+        <span className="director-light-empty">场景资产</span>
+        {shot.stageAssets.map((instance) => <button key={instance.id} data-stage-asset-id={instance.id} className={selectedObjectId === instance.id ? 'active' : ''} onClick={() => selectObject(instance.id)} title={`选择 ${instance.name}`}>
+          <span>{instance.kind === 'environment' ? '▦' : instance.kind === 'vehicle' ? '◆' : '■'}</span>
+          <span>{instance.name}</span>
+          <small>{stageKindZh[instance.kind]}{instance.visible ? '' : ' · 隐藏'}</small>
+        </button>)}
+        {shot.stageAssets.length === 0 && <span className="director-light-empty">当前镜头未放置环境 / 道具 / 车辆。</span>}
       </div>
 
       <div className="director-light-tools">
