@@ -13,6 +13,9 @@ export type ComfyWorkflowNodeHints = {
   sizeNodeId?: string;
   outputNodeId?: string;
   controlNodeId?: string;
+  poseImageNodeId?: string;
+  depthImageNodeId?: string;
+  lineartImageNodeId?: string;
 };
 
 function linkedNodeId(value: unknown): string | undefined {
@@ -27,6 +30,17 @@ function hasNumericSize(node: ComfyApiWorkflowNode): boolean {
 
 function nodeTitle(node: ComfyApiWorkflowNode): string {
   return `${node.class_type ?? ''} ${node._meta?.title ?? ''}`.toLowerCase();
+}
+
+function findPdsImageNode(entries: Array<[string, ComfyApiWorkflowNode]>, kind: 'pose' | 'depth' | 'lineart'): string | undefined {
+  return entries.find(([, node]) => {
+    const title = nodeTitle(node);
+    const isImageInput = title.includes('loadimage') || title.includes('load image') || 'image' in (node.inputs ?? {});
+    if (!isImageInput) return false;
+    if (kind === 'pose') return title.includes('pds pose') || title.includes('pds_pose') || title.includes('pds-pose');
+    if (kind === 'depth') return title.includes('pds depth') || title.includes('pds_depth') || title.includes('pds-depth');
+    return title.includes('pds lineart') || title.includes('pds line art') || title.includes('pds_lineart') || title.includes('pds-lineart');
+  })?.[0];
 }
 
 export function parseComfyApiWorkflowJson(text: string): ComfyApiWorkflow {
@@ -78,6 +92,9 @@ export function detectComfyWorkflowNodeHints(workflow: ComfyApiWorkflow): ComfyW
     sizeNodeId,
     outputNodeId,
     controlNodeId,
+    poseImageNodeId: findPdsImageNode(entries, 'pose'),
+    depthImageNodeId: findPdsImageNode(entries, 'depth'),
+    lineartImageNodeId: findPdsImageNode(entries, 'lineart'),
   };
 }
 
