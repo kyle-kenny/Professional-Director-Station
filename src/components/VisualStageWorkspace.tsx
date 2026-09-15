@@ -1,6 +1,7 @@
 import { ArrowLeftRight, Download, Image, Layers3, Play, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { AiModelProfile } from '../domain/ai';
+import { inspectComfyWorkflowJson } from '../ai/comfyWorkflow';
 import { getAiGeneratedMedia } from '../storage/aiMediaStore';
 import { generateAiMedia, upsertAiModelProfile } from '../store/aiRegistry';
 import { useDirectorStore } from '../store/directorStore';
@@ -165,33 +166,44 @@ export function VisualStageWorkspace() {
     }
   };
 
+  const applyComfyWorkflow = (text: string, name: string) => {
+    const inspected = inspectComfyWorkflowJson(text);
+    setComfyWorkflowJson(inspected.canonicalJson);
+    setComfyWorkflowName(name);
+    if (inspected.hints.positiveNodeId) setComfyPositiveNodeId(inspected.hints.positiveNodeId);
+    if (inspected.hints.negativeNodeId) setComfyNegativeNodeId(inspected.hints.negativeNodeId);
+    if (inspected.hints.seedNodeId) setComfySeedNodeId(inspected.hints.seedNodeId);
+    if (inspected.hints.sizeNodeId) setComfySizeNodeId(inspected.hints.sizeNodeId);
+    if (inspected.hints.controlNodeId) setComfyControlNodeId(inspected.hints.controlNodeId);
+    if (inspected.hints.outputNodeId) setComfyOutputNodeId(inspected.hints.outputNodeId);
+    const detected = Object.entries(inspected.hints).filter(([, value]) => value).map(([key, value]) => `${key}=${value}`).join(' · ');
+    setMessage(detected ? `已载入 ${name}，自动识别：${detected}` : `已载入 ${name}；该工作流需要手动填写节点映射。`);
+    return inspected;
+  };
+
   const loadComfyWorkflow = (file?: File) => {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = () => {
-      try {
-        const text = String(reader.result ?? '');
-        const parsed = JSON.parse(text);
-        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('工作流必须是 API format JSON object。');
-        setComfyWorkflowJson(JSON.stringify(parsed));
-        setComfyWorkflowName(file.name);
-        setMessage(`已载入 ComfyUI API workflow：${file.name}`);
-      } catch (error) {
-        setMessage(error instanceof Error ? error.message : 'ComfyUI workflow JSON 无效。');
-      }
+      try { applyComfyWorkflow(String(reader.result ?? ''), file.name); }
+      catch (error) { setMessage(error instanceof Error ? error.message : 'ComfyUI workflow JSON 无效。'); }
     };
     reader.readAsText(file);
   };
 
+  const detectComfyNodes = () => {
+    try { applyComfyWorkflow(comfyWorkflowJson, comfyWorkflowName || '手动粘贴 workflow'); }
+    catch (error) { setMessage(error instanceof Error ? error.message : 'ComfyUI workflow JSON 无效。'); }
+  };
+
   const addComfyProfile = () => {
     try {
-      if (!comfyPositiveNodeId.trim()) throw new Error('需要填写 Positive Prompt 节点 ID。');
       if (!comfyWorkflowJson.trim()) throw new Error('需要载入 ComfyUI API workflow JSON。');
-      const parsed = JSON.parse(comfyWorkflowJson);
-      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('ComfyUI workflow 必须是 API format JSON object。');
+      const inspected = inspectComfyWorkflowJson(comfyWorkflowJson);
+      if (!comfyPositiveNodeId.trim()) throw new Error('需要填写 Positive Prompt 节点 ID。');
       const parameters: Record<string, string | number | boolean> = {
         comfyBaseUrl: comfyBaseUrl.trim(),
-        workflowJson: JSON.stringify(parsed),
+        workflowJson: inspected.canonicalJson,
         positiveNodeId: comfyPositiveNodeId.trim(),
         requestTimeoutMs: 300_000,
         comfyTimeoutMs: 270_000,
@@ -282,6 +294,7 @@ export function VisualStageWorkspace() {
             <label><span>模型 / 工作流名</span><input value={comfyModelId} onChange={(event) => setComfyModelId(event.target.value)} placeholder="flux-dev-workflow"/></label>
             <label className="comfy-workflow-file"><span>API Workflow</span><input type="file" accept="application/json,.json" onChange={(event) => loadComfyWorkflow(event.target.files?.[0])}/><small>{comfyWorkflowName || '在 ComfyUI 中导出 API format JSON 后载入'}</small></label>
             <textarea rows={5} value={comfyWorkflowJson} onChange={(event) => { setComfyWorkflowJson(event.target.value); setComfyWorkflowName('手动粘贴'); }} placeholder="也可以直接粘贴 ComfyUI API workflow JSON"/>
+            <div className="comfy-health"><button onClick={detectComfyNodes}>自动识别节点</button><span>常见 KSampler / EmptyLatentImage / SaveImage 会自动映射</span></div>
             <div className="comfy-node-grid">
               <label><span>Positive *</span><input value={comfyPositiveNodeId} onChange={(event) => setComfyPositiveNodeId(event.target.value)} placeholder="node id"/></label>
               <label><span>Negative</span><input value={comfyNegativeNodeId} onChange={(event) => setComfyNegativeNodeId(event.target.value)} placeholder="node id"/></label>
