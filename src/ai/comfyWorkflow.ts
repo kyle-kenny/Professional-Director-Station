@@ -35,6 +35,9 @@ export function parseComfyApiWorkflowJson(text: string): ComfyApiWorkflow {
   catch { throw new Error('ComfyUI workflow JSON 无法解析。请使用 Export Workflow (API) / Save (API Format) 导出的文件。'); }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('ComfyUI API workflow 必须是以 node id 为键的 JSON object。');
   const workflow = parsed as Record<string, unknown>;
+  if (Array.isArray(workflow.nodes) || Array.isArray(workflow.links)) {
+    throw new Error('这看起来是普通 ComfyUI workflow，而不是 API format workflow。请使用 Export Workflow (API) / Save (API Format)。');
+  }
   for (const [id, raw] of Object.entries(workflow)) {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error(`ComfyUI node ${id} 不是合法对象。`);
     const node = raw as ComfyApiWorkflowNode;
