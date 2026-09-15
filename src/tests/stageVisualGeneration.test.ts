@@ -17,8 +17,9 @@ describe('PDS 1.5 Stage to Visual generation', () => {
     const project = createDefaultProject();
     const sequence = project.sequences[0];
     const shot = sequence.shots[0];
-    const first = createStageVisualGenerationPreview(project, sequence.id, shot, 12, localStructuralProfile, 'lighting', 'Moody night interior.', 'No bloom.');
-    const second = createStageVisualGenerationPreview(project, sequence.id, shot, 12, localStructuralProfile, 'lighting', 'Moody night interior.', 'No bloom.');
+    const overrides = { visualTarget: 'lighting', width: 1280, height: 720, requestTimeoutMs: 300_000 };
+    const first = createStageVisualGenerationPreview(project, sequence.id, shot, 12, localStructuralProfile, 'lighting', 'Moody night interior.', 'No bloom.', overrides);
+    const second = createStageVisualGenerationPreview(project, sequence.id, shot, 12, localStructuralProfile, 'lighting', 'Moody night interior.', 'No bloom.', overrides);
 
     expect(first).toEqual(second);
     expect(first.stage.frame).toBe(12);
@@ -28,6 +29,7 @@ describe('PDS 1.5 Stage to Visual generation', () => {
     expect(first.request.prompt).toContain('PDS_VISUAL_TARGET=lighting');
     expect(first.request.prompt).toContain(`${first.stage.camera.focalLengthMm.toFixed(1)}mm lens`);
     expect(first.request.negativePrompt).toContain('Do not change actor count');
+    expect(first.request.profile.parameters).toMatchObject(overrides);
   });
 
   it('tags prompts in a machine-readable way without dropping user direction', () => {
