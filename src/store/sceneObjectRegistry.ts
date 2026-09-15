@@ -123,6 +123,12 @@ export function deleteSceneSelection(selectedId?: string): DeleteSceneResult {
     removeActorEntity(actor.id);
     return 'deleted';
   }
+  const stageAsset = shot.stageAssets.find((item) => item.id === selectedId);
+  if (stageAsset) {
+    commitScene((_project, nextShot) => { nextShot.stageAssets = nextShot.stageAssets.filter((item) => item.id !== stageAsset.id); });
+    useDirectorStore.setState({ selectedObjectId: undefined });
+    return 'deleted';
+  }
   const light = shot.lights.find((item) => item.id === selectedId);
   if (light) {
     commitScene((_project, nextShot) => { nextShot.lights = nextShot.lights.filter((item) => item.id !== light.id); });
