@@ -1,9 +1,11 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { renderStageControlMaps } from './control-map-raster.mjs';
 
 const DEFAULT_TIMEOUT_MS = 240_000;
 const DEFAULT_POLL_MS = 600;
 const MAX_IMAGE_BYTES = 64 * 1024 * 1024;
+const MAX_RENDER_PASS_BYTES = 24 * 1024 * 1024;
+const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 
 function isPrivateIpv4(hostname) {
   const parts = hostname.split('.').map(Number);
@@ -73,6 +75,20 @@ function optionalImageNode(workflow, nodeId, label, inputName = 'image') {
   return { nodeId: id, inputName: String(inputName || 'image') };
 }
 
+function renderPassMetadata(request) {
+  const bundle = request.renderPasses;
+  if (!bundle) return undefined;
+  return {
+    schema: bundle.schema,
+    shotId: bundle.shotId,
+    frame: bundle.frame,
+    width: bundle.width,
+    height: bundle.height,
+    bundleHashSha256: bundle.bundleHashSha256,
+    hashes: Object.fromEntries(Object.entries(bundle.passes ?? {}).map(([kind, pass]) => [kind, pass?.contentHashSha256])),
+  };
+}
+
 export function prepareComfyWorkflow(request, { allowRemote = false } = {}) {
   if (!request || request.schema !== 'pds-ai-generation-1' || request.task !== 'storyboard') throw new Error('ComfyUI bridge only accepts PDS storyboard generation requests.');
   const parameters = request.profile?.parameters ?? {};
@@ -102,6 +118,7 @@ export function prepareComfyWorkflow(request, { allowRemote = false } = {}) {
     controlNode.inputs[String(parameters.controlInputName || 'text')] = JSON.stringify({
       source: request.source,
       controls: request.controls,
+      renderPasses: renderPassMetadata(request),
       visualTarget: parameters.visualTarget,
     });
   }
@@ -114,6 +131,12 @@ export function prepareComfyWorkflow(request, { allowRemote = false } = {}) {
       pose: optionalImageNode(workflow, parameters.poseImageNodeId, 'PDS Pose image', parameters.poseImageInputName),
       depth: optionalImageNode(workflow, parameters.depthImageNodeId, 'PDS Depth image', parameters.depthImageInputName),
       lineart: optionalImageNode(workflow, parameters.lineartImageNodeId, 'PDS Lineart image', parameters.lineartImageInputName),
+    },
+    sceneRenderPassNodes: {
+      sceneDepth: optionalImageNode(workflow, parameters.sceneDepthImageNodeId, 'PDS Scene Depth image', parameters.sceneDepthImageInputName),
+      sceneNormal: optionalImageNode(workflow, parameters.sceneNormalImageNodeId, 'PDS Scene Normal image', parameters.sceneNormalImageInputName),
+      sceneMask: optionalImageNode(workflow, parameters.sceneMaskImageNodeId, 'PDS Scene Mask image', parameters.sceneMaskImageInputName),
+      sceneEdge: optionalImageNode(workflow, parameters.sceneEdgeImageNodeId, 'PDS Scene Edge image', parameters.sceneEdgeImageInputName),
     },
     seed,
     width,
@@ -175,12 +198,44 @@ async function attachStageControlMaps(fetchImpl, prepared, request, signal) {
   return uploaded;
 }
 
+function decodeRenderPass(request, kind) {
+  const bundle = request.renderPasses;
+  if (!bundle || bundle.schema !== 'pds-stage-render-passes-1') throw new Error(`ComfyUI workflow maps ${kind}, but this request has no valid PDS Stage render-pass bundle.`);
+  if (bundle.shotId !== request.source?.shotId || bundle.frame !== request.source?.frame) throw new Error(`PDS Stage render-pass bundle does not match request Shot/frame for ${kind}.`);
+  const pass = bundle.passes?.[kind];
+  if (!pass || pass.kind !== kind || pass.mimeType !== 'image/png' || typeof pass.dataBase64 !== 'string') throw new Error(`PDS Stage render-pass ${kind} is missing or invalid.`);
+  if (pass.width !== bundle.width || pass.height !== bundle.height) throw new Error(`PDS Stage render-pass ${kind} dimensions do not match its bundle.`);
+  const bytes = Buffer.from(pass.dataBase64, 'base64');
+  if (!bytes.length || bytes.length > MAX_RENDER_PASS_BYTES) throw new Error(`PDS Stage render-pass ${kind} exceeds the bridge size policy.`);
+  if (bytes.length < PNG_SIGNATURE.length || !bytes.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)) throw new Error(`PDS Stage render-pass ${kind} is not a PNG.`);
+  const hash = createHash('sha256').update(bytes).digest('hex');
+  if (pass.contentHashSha256 && pass.contentHashSha256 !== hash) throw new Error(`PDS Stage render-pass ${kind} failed SHA-256 verification.`);
+  return bytes;
+}
+
+async function attachStageRenderPasses(fetchImpl, prepared, request, signal) {
+  const active = Object.entries(prepared.sceneRenderPassNodes).filter(([, config]) => Boolean(config));
+  if (!active.length) return [];
+  const stem = `${safeFileStem(request.source?.shotId)}__f${String(request.source?.frame ?? 0).padStart(6, '0')}`;
+  const uploaded = [];
+  for (const [kind, config] of active) {
+    const bytes = decodeRenderPass(request, kind);
+    const suffix = kind.replace(/^scene/, 'scene-').toLowerCase();
+    const filename = `${stem}__${suffix}.png`;
+    const imageName = await uploadControlImage(fetchImpl, prepared.baseUrl, bytes, filename, signal);
+    prepared.workflow[config.nodeId].inputs[config.inputName] = imageName;
+    uploaded.push({ kind, nodeId: config.nodeId, imageName, filename });
+  }
+  return uploaded;
+}
+
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export async function runComfyUiGeneration(request, options = {}) {
   const fetchImpl = options.fetchImpl ?? fetch;
   const prepared = prepareComfyWorkflow(request, { allowRemote: options.allowRemote ?? false });
   const uploadedControlMaps = await attachStageControlMaps(fetchImpl, prepared, request, options.signal);
+  const uploadedRenderPasses = await attachStageRenderPasses(fetchImpl, prepared, request, options.signal);
   const clientId = `pds-${randomUUID()}`;
   const submitResponse = await fetchImpl(`${prepared.baseUrl}/prompt`, {
     method: 'POST',
@@ -216,6 +271,7 @@ export async function runComfyUiGeneration(request, options = {}) {
         jobId: promptId,
         seed: prepared.seed,
         controlMaps: uploadedControlMaps,
+        renderPasses: uploadedRenderPasses,
       };
     }
     if (record?.status?.completed === true) throw new Error(`ComfyUI job ${promptId} completed without an image output.`);
