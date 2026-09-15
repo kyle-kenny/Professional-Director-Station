@@ -74,6 +74,9 @@ export function VisualStageWorkspace() {
   const [comfySeedNodeId, setComfySeedNodeId] = useState('');
   const [comfySizeNodeId, setComfySizeNodeId] = useState('');
   const [comfyControlNodeId, setComfyControlNodeId] = useState('');
+  const [comfyPoseImageNodeId, setComfyPoseImageNodeId] = useState('');
+  const [comfyDepthImageNodeId, setComfyDepthImageNodeId] = useState('');
+  const [comfyLineartImageNodeId, setComfyLineartImageNodeId] = useState('');
   const [comfyOutputNodeId, setComfyOutputNodeId] = useState('');
   const [bridgeStatus, setBridgeStatus] = useState('');
 
@@ -175,6 +178,9 @@ export function VisualStageWorkspace() {
     if (inspected.hints.seedNodeId) setComfySeedNodeId(inspected.hints.seedNodeId);
     if (inspected.hints.sizeNodeId) setComfySizeNodeId(inspected.hints.sizeNodeId);
     if (inspected.hints.controlNodeId) setComfyControlNodeId(inspected.hints.controlNodeId);
+    if (inspected.hints.poseImageNodeId) setComfyPoseImageNodeId(inspected.hints.poseImageNodeId);
+    if (inspected.hints.depthImageNodeId) setComfyDepthImageNodeId(inspected.hints.depthImageNodeId);
+    if (inspected.hints.lineartImageNodeId) setComfyLineartImageNodeId(inspected.hints.lineartImageNodeId);
     if (inspected.hints.outputNodeId) setComfyOutputNodeId(inspected.hints.outputNodeId);
     const detected = Object.entries(inspected.hints).filter(([, value]) => value).map(([key, value]) => `${key}=${value}`).join(' · ');
     setMessage(detected ? `已载入 ${name}，自动识别：${detected}` : `已载入 ${name}；该工作流需要手动填写节点映射。`);
@@ -215,6 +221,9 @@ export function VisualStageWorkspace() {
       if (comfySeedNodeId.trim()) parameters.seedNodeId = comfySeedNodeId.trim();
       if (comfySizeNodeId.trim()) parameters.sizeNodeId = comfySizeNodeId.trim();
       if (comfyControlNodeId.trim()) parameters.controlNodeId = comfyControlNodeId.trim();
+      if (comfyPoseImageNodeId.trim()) parameters.poseImageNodeId = comfyPoseImageNodeId.trim();
+      if (comfyDepthImageNodeId.trim()) parameters.depthImageNodeId = comfyDepthImageNodeId.trim();
+      if (comfyLineartImageNodeId.trim()) parameters.lineartImageNodeId = comfyLineartImageNodeId.trim();
       if (comfyOutputNodeId.trim()) parameters.outputNodeId = comfyOutputNodeId.trim();
       const profile: AiModelProfile = {
         id: comfyProfileId(comfyModelId),
@@ -229,7 +238,8 @@ export function VisualStageWorkspace() {
       };
       upsertAiModelProfile(profile);
       setProfileId(profile.id);
-      setMessage(`已注册 ${profile.label}。现在“生成 Visual”会通过本地 PDS Bridge 调用 ComfyUI。`);
+      const controlCount = [comfyPoseImageNodeId, comfyDepthImageNodeId, comfyLineartImageNodeId].filter((value) => value.trim()).length;
+      setMessage(`已注册 ${profile.label}。生成时会通过 PDS Bridge 调用 ComfyUI${controlCount ? `，并上传 ${controlCount} 张 Stage 控制图` : ''}。`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'ComfyUI Provider 注册失败。');
     }
@@ -250,7 +260,7 @@ export function VisualStageWorkspace() {
 
   return <div className="visual-stage-workspace">
     <header className="visual-stage-header">
-      <div><span className="chip">PDS 1.6 · ComfyUI Provider</span><h2>{VISUAL_STAGE_UI.workspace}</h2><p>把当前 Shot / Frame 的 Stage 状态转成结构化 AI 控制条件并生成 Visual。ComfyUI Provider 会经由本地 PDS Bridge 入队、轮询并把最终图片回写为可追溯媒体。</p></div>
+      <div><span className="chip">PDS 1.7 · Stage Control Maps</span><h2>{VISUAL_STAGE_UI.workspace}</h2><p>把当前 Shot / Frame 的 Stage 状态转成结构化 AI 控制条件，并将 Pose / Depth / Lineart 栅格控制图真正上传到 ComfyUI 工作流。生成结果仍只作为可追溯媒体写回，不会自动改动 Stage。</p></div>
       <div className="visual-stage-frame"><b>{shot.name}</b><span>Frame {stage.frame}</span><small>{shot.fps} fps · {shot.frameAspect.toFixed(3)} · {targetWidth}×{targetHeight}</small></div>
     </header>
 
@@ -265,19 +275,19 @@ export function VisualStageWorkspace() {
         <ArrowLeftRight size={24}/>
         <strong>{direction === 'visual-to-stage' ? VISUAL_STAGE_UI.visualToStage : VISUAL_STAGE_UI.stageToVisual}</strong>
         <div className="bridge-switch"><button className={direction === 'visual-to-stage' ? 'active' : ''} onClick={() => setDirection('visual-to-stage')}>Visual → Stage</button><button className={direction === 'stage-to-visual' ? 'active' : ''} onClick={() => setDirection('stage-to-visual')}>Stage → Visual</button></div>
-        <span className={direction === 'stage-to-visual' ? 'live-badge' : 'draft-badge'}>{direction === 'stage-to-visual' ? 'GENERATION READY' : 'PHASE 1 LINK'}</span>
+        <span className={direction === 'stage-to-visual' ? 'live-badge' : 'draft-badge'}>{direction === 'stage-to-visual' ? 'CONTROL MAP READY' : 'PHASE 1 LINK'}</span>
       </section>
 
       <section className="visual-stage-card stage-side">
         <div className="visual-stage-card-title"><Layers3 size={17}/><div><strong>{VISUAL_STAGE_UI.stage}</strong><span>Authoritative frame snapshot</span></div></div>
         <div className="stage-metrics"><div><b>{stage.actors.length}</b><span>Actors</span></div><div><b>{stage.lights.length}</b><span>Lights</span></div><div><b>{stage.camera.focalLengthMm.toFixed(0)} mm</b><span>Lens</span></div></div>
-        <div className="artifact-readout"><span>Artifact</span><code>{stage.filename}</code><small>Pose / camera / lighting are sampled from the current frame.</small></div>
+        <div className="artifact-readout"><span>Control maps</span><code>Pose · Depth · Lineart</code><small>Pose uses frame-authoritative FK / IK projection; all maps follow the current Stage camera and frame.</small></div>
       </section>
     </div>
 
     <section className="stage-visual-generator">
       <div className="stage-visual-config">
-        <div className="stage-visual-section-head"><div><strong>Stage → Visual Generation</strong><p>本地结构预览用于零配置验证；ComfyUI / PDS-HTTP provider 可生成真实图片。</p></div><span>{generationPreview?.schemaVersion ?? 'no-provider'}</span></div>
+        <div className="stage-visual-section-head"><div><strong>Stage → Visual Generation</strong><p>ComfyUI Provider 可把当前帧的 Stage 控制图上传到对应 LoadImage / ControlNet 链路。</p></div><span>{generationPreview?.schemaVersion ?? 'no-provider'}</span></div>
         <label><span>Provider</span><select aria-label="Visual provider" value={selectedProfile?.id ?? ''} onChange={(event) => setProfileId(event.target.value)}>{eligibleProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.label} · {profile.modelId}@{profile.revision}</option>)}</select></label>
         <label><span>Prompt</span><textarea rows={4} value={prompt} onChange={(event) => setPrompt(event.target.value)}/></label>
         <label><span>Negative</span><textarea rows={3} value={negativePrompt} onChange={(event) => setNegativePrompt(event.target.value)}/></label>
@@ -291,20 +301,23 @@ export function VisualStageWorkspace() {
             <label><span>PDS Bridge</span><input value={comfyBridgeEndpoint} onChange={(event) => setComfyBridgeEndpoint(event.target.value)} placeholder="http://127.0.0.1:8790/v1/generate"/></label>
             <div className="comfy-health"><button onClick={() => void checkComfyBridge()}>检查 Bridge</button><span>{bridgeStatus || '运行 npm run comfyui:bridge'}</span></div>
             <label><span>ComfyUI</span><input value={comfyBaseUrl} onChange={(event) => setComfyBaseUrl(event.target.value)} placeholder="http://127.0.0.1:8188"/></label>
-            <label><span>模型 / 工作流名</span><input value={comfyModelId} onChange={(event) => setComfyModelId(event.target.value)} placeholder="flux-dev-workflow"/></label>
+            <label><span>模型 / 工作流名</span><input value={comfyModelId} onChange={(event) => setComfyModelId(event.target.value)} placeholder="flux-controlnet-workflow"/></label>
             <label className="comfy-workflow-file"><span>API Workflow</span><input type="file" accept="application/json,.json" onChange={(event) => loadComfyWorkflow(event.target.files?.[0])}/><small>{comfyWorkflowName || '在 ComfyUI 中导出 API format JSON 后载入'}</small></label>
             <textarea rows={5} value={comfyWorkflowJson} onChange={(event) => { setComfyWorkflowJson(event.target.value); setComfyWorkflowName('手动粘贴'); }} placeholder="也可以直接粘贴 ComfyUI API workflow JSON"/>
-            <div className="comfy-health"><button onClick={detectComfyNodes}>自动识别节点</button><span>常见 KSampler / EmptyLatentImage / SaveImage 会自动映射</span></div>
+            <div className="comfy-health"><button onClick={detectComfyNodes}>自动识别节点</button><span>给 LoadImage 节点命名 PDS Pose / PDS Depth / PDS Lineart 可自动识别</span></div>
             <div className="comfy-node-grid">
               <label><span>Positive *</span><input value={comfyPositiveNodeId} onChange={(event) => setComfyPositiveNodeId(event.target.value)} placeholder="node id"/></label>
               <label><span>Negative</span><input value={comfyNegativeNodeId} onChange={(event) => setComfyNegativeNodeId(event.target.value)} placeholder="node id"/></label>
               <label><span>Seed</span><input value={comfySeedNodeId} onChange={(event) => setComfySeedNodeId(event.target.value)} placeholder="KSampler node"/></label>
               <label><span>Size</span><input value={comfySizeNodeId} onChange={(event) => setComfySizeNodeId(event.target.value)} placeholder="latent node"/></label>
+              <label><span>PDS Pose PNG</span><input value={comfyPoseImageNodeId} onChange={(event) => setComfyPoseImageNodeId(event.target.value)} placeholder="LoadImage node"/></label>
+              <label><span>PDS Depth PNG</span><input value={comfyDepthImageNodeId} onChange={(event) => setComfyDepthImageNodeId(event.target.value)} placeholder="LoadImage node"/></label>
+              <label><span>PDS Lineart PNG</span><input value={comfyLineartImageNodeId} onChange={(event) => setComfyLineartImageNodeId(event.target.value)} placeholder="LoadImage node"/></label>
               <label><span>PDS Control JSON</span><input value={comfyControlNodeId} onChange={(event) => setComfyControlNodeId(event.target.value)} placeholder="optional text node"/></label>
               <label><span>Output</span><input value={comfyOutputNodeId} onChange={(event) => setComfyOutputNodeId(event.target.value)} placeholder="optional SaveImage node"/></label>
             </div>
             <button onClick={addComfyProfile}>注册 ComfyUI Provider</button>
-            <small className="stage-visual-note">Workflow JSON 会随模型配置保存在 PDS 工程中；密码 / Bridge token 不会持久化。未填写 Output 时自动取第一个图片输出。</small>
+            <small className="stage-visual-note">填写任一控制图节点后，Bridge 会为当前 Shot / Frame 栅格化对应 PNG、上传到 ComfyUI input/pds-control，再写回该 LoadImage 节点。Workflow JSON 会保存在工程中，密码 / Bridge token 不会持久化。</small>
           </div>
         </details>
 
@@ -323,7 +336,7 @@ export function VisualStageWorkspace() {
     </section>
 
     <section className="visual-stage-intent">
-      <div><strong>Contract / Request Preview</strong><p>Visual 与 Stage 仍通过同一 Shot / Frame 契约绑定；ComfyUI Provider 收到的请求同时包含结构控制条件、variant、尺寸和这里的目标提示词。</p></div>
+      <div><strong>Contract / Request Preview</strong><p>Visual 与 Stage 仍通过同一 Shot / Frame 契约绑定；ComfyUI Provider 收到的请求包含 FK / IK Pose 投影、Depth、Lineart、Camera、Lighting、variant 与目标尺寸。</p></div>
       <pre>{JSON.stringify(direction === 'stage-to-visual' && generationPreview ? generationPreview : intent, null, 2)}</pre>
       <div className="visual-stage-actions"><button onClick={() => downloadJson(stage.filename, stage)}><Download size={15}/>导出 Stage Artifact</button><button onClick={() => downloadJson(`${intent.id}.pds-link.json`, intent)}><Download size={15}/>导出 Link Intent</button>{generationPreview && <button onClick={() => downloadJson(`${shot.id}__stage-visual-request__f${String(stage.frame).padStart(6, '0')}.json`, generationPreview)}><Download size={15}/>导出 Generation Request</button>}</div>
     </section>
