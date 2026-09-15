@@ -43,15 +43,12 @@ http://127.0.0.1:8790/health
 2. Open `Visual ↔ Stage`.
 3. Expand `添加 ComfyUI Provider`.
 4. Load the API workflow JSON.
-5. Enter the node ID containing the positive prompt. This is required.
-6. Optionally map:
-   - Negative prompt node
-   - KSampler seed node
-   - latent/image size node
-   - PDS Control JSON text node
-   - output / SaveImage node
+5. PDS automatically attempts to identify common KSampler-linked Positive / Negative prompt nodes, the KSampler seed node, a numeric width/height latent node, SaveImage/PreviewImage output, and an optional node titled `PDS Control JSON`.
+6. Review or override any detected node IDs. Positive Prompt is the only required mapping.
 7. Register the provider and select it from the Provider dropdown.
 8. Click `生成 Visual`.
+
+For custom Flux graphs or custom nodes whose relationships cannot be inferred safely, leave automatic detection as a convenience only and enter the node IDs explicitly.
 
 If Output is omitted, the bridge uses the first image output found in ComfyUI history.
 
