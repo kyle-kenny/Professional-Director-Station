@@ -1,4 +1,5 @@
 import http from 'node:http';
+import { pathToFileURL } from 'node:url';
 import { runComfyUiGeneration } from './comfyui-provider.mjs';
 
 const PORT = Number(process.env.PDS_COMFYUI_BRIDGE_PORT ?? 8790);
@@ -86,7 +87,7 @@ export function createComfyUiBridgeServer() {
   });
 }
 
-if (import.meta.url === `file://${process.argv[1]?.replace(/\\/g, '/')}`) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const server = createComfyUiBridgeServer();
   server.listen(PORT, HOST, () => console.log(`PDS ComfyUI bridge listening on http://${HOST}:${PORT}`));
   for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => server.close(() => process.exit(0)));
