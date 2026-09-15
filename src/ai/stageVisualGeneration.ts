@@ -49,12 +49,13 @@ export function createStageVisualGenerationPreview(
   variant: VisualFixtureVariant,
   userPrompt: string,
   userNegativePrompt = '',
+  parameterOverrides: Record<string, string | number | boolean> = {},
 ): StageVisualGenerationPreview {
   const stage = createStageArtifact(project.id, sequenceId, shot, frame);
   const visual = createVisualFixture(stage, variant);
   const prompt = buildStageVisualPrompt(stage, variant, userPrompt);
   const negativePrompt = buildStageVisualNegativePrompt(userNegativePrompt);
-  const request = buildGenerationRequest(project, shot, 'storyboard', stage.frame, profile, prompt, negativePrompt);
+  const request = buildGenerationRequest(project, shot, 'storyboard', stage.frame, profile, prompt, negativePrompt, parameterOverrides);
   return { schemaVersion: STAGE_VISUAL_GENERATION_VERSION, stage, visual, request };
 }
 
