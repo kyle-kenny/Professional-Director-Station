@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import { normalizeComfyBaseUrl, prepareComfyWorkflow, runComfyUiGeneration } from '../server/comfyui-provider.mjs';
 import { renderStageControlMaps } from '../server/control-map-raster.mjs';
@@ -13,6 +14,10 @@ const workflow = {
   '11': { class_type: 'LoadImage', _meta: { title: 'PDS Pose' }, inputs: { image: '' } },
   '12': { class_type: 'LoadImage', _meta: { title: 'PDS Depth' }, inputs: { image: '' } },
   '13': { class_type: 'LoadImage', _meta: { title: 'PDS Lineart' }, inputs: { image: '' } },
+  '14': { class_type: 'LoadImage', _meta: { title: 'PDS Scene Depth' }, inputs: { image: '' } },
+  '15': { class_type: 'LoadImage', _meta: { title: 'PDS Scene Normal' }, inputs: { image: '' } },
+  '16': { class_type: 'LoadImage', _meta: { title: 'PDS Scene Mask' }, inputs: { image: '' } },
+  '17': { class_type: 'LoadImage', _meta: { title: 'PDS Scene Edge' }, inputs: { image: '' } },
 };
 
 const kp = (x, y) => ({ x, y, visible: true, cameraDepthM: 3 });
@@ -32,6 +37,19 @@ const controls = {
   lights: [], cameraReference: { focalLengthMm: 50 },
 };
 
+const renderPassBytes = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 11, 22, 33, 44, 55, 66]);
+const renderPassHash = createHash('sha256').update(renderPassBytes).digest('hex');
+const renderPass = (kind) => ({ kind, mimeType: 'image/png', width: 1280, height: 720, dataBase64: renderPassBytes.toString('base64'), contentHashSha256: renderPassHash });
+const renderPasses = {
+  schema: 'pds-stage-render-passes-1', shotId: 'shot-01', frame: 12, width: 1280, height: 720, bundleHashSha256: 'd'.repeat(64),
+  passes: {
+    sceneDepth: renderPass('sceneDepth'),
+    sceneNormal: renderPass('sceneNormal'),
+    sceneMask: renderPass('sceneMask'),
+    sceneEdge: renderPass('sceneEdge'),
+  },
+};
+
 const request = {
   schema: 'pds-ai-generation-1',
   task: 'storyboard',
@@ -42,11 +60,13 @@ const request = {
     parameters: {
       comfyBaseUrl: 'http://127.0.0.1:8188', workflowJson: JSON.stringify(workflow), positiveNodeId: '6', negativeNodeId: '7',
       seedNodeId: '3', sizeNodeId: '5', controlNodeId: '8', outputNodeId: '9', poseImageNodeId: '11', depthImageNodeId: '12', lineartImageNodeId: '13',
+      sceneDepthImageNodeId: '14', sceneNormalImageNodeId: '15', sceneMaskImageNodeId: '16', sceneEdgeImageNodeId: '17',
       width: 1280, height: 720, visualTarget: 'composition', comfyPollMs: 100,
     },
   },
   prompt: 'PDS visual prompt', negativePrompt: 'no extra cast', promptHashSha256: 'b'.repeat(64),
   controls,
+  renderPasses,
   controlHashSha256: 'c'.repeat(64),
 };
 
@@ -62,7 +82,9 @@ assert.equal(prepared.workflow['5'].inputs.height, 720);
 assert.equal(prepared.workflow['3'].inputs.seed, prepared.seed);
 assert.match(prepared.workflow['8'].inputs.text, /"shotId":"shot-01"/);
 assert.match(prepared.workflow['8'].inputs.text, /"visualTarget":"composition"/);
+assert.match(prepared.workflow['8'].inputs.text, /"pds-stage-render-passes-1"/);
 assert.equal(prepared.controlImageNodes.pose?.nodeId, '11');
+assert.equal(prepared.sceneRenderPassNodes.sceneEdge?.nodeId, '17');
 
 const maps = renderStageControlMaps(controls, 320, 180);
 for (const map of [maps.pose, maps.depth, maps.lineart]) {
@@ -87,9 +109,7 @@ const fakeFetch = async (input, init = {}) => {
   if (url.endsWith('/prompt')) {
     const body = JSON.parse(String(init.body));
     assert.equal(body.prompt['6'].inputs.text, request.prompt);
-    assert.equal(body.prompt['11'].inputs.image, 'pds-control/control-1.png');
-    assert.equal(body.prompt['12'].inputs.image, 'pds-control/control-2.png');
-    assert.equal(body.prompt['13'].inputs.image, 'pds-control/control-3.png');
+    for (let node = 11; node <= 17; node += 1) assert.equal(body.prompt[String(node)].inputs.image, `pds-control/control-${node - 10}.png`);
     return new Response(JSON.stringify({ prompt_id: 'prompt-pds-1', number: 1, node_errors: {} }), { status: 200, headers: { 'content-type': 'application/json' } });
   }
   if (url.includes('/history/prompt-pds-1')) {
@@ -110,11 +130,17 @@ assert.deepEqual(Buffer.from(result.mediaBase64, 'base64'), Buffer.from(pngBytes
 assert.equal(result.seed, prepared.seed);
 assert.equal(result.controlMaps.length, 3);
 assert.deepEqual(result.controlMaps.map((item) => item.kind), ['pose', 'depth', 'lineart']);
-assert.ok(calls.filter((call) => call.url.endsWith('/upload/image')).length === 3);
+assert.equal(result.renderPasses.length, 4);
+assert.deepEqual(result.renderPasses.map((item) => item.kind), ['sceneDepth', 'sceneNormal', 'sceneMask', 'sceneEdge']);
+assert.equal(calls.filter((call) => call.url.endsWith('/upload/image')).length, 7);
 assert.ok(calls.some((call) => call.url.includes('/view?filename=pds.png')));
 
-for (const required of ['server/control-map-raster.mjs', 'server/comfyui-provider.mjs', 'server/comfyui-server.mjs', 'src/components/VisualStageWorkspace.tsx']) {
+const tampered = structuredClone(request);
+tampered.renderPasses.passes.sceneDepth.contentHashSha256 = '0'.repeat(64);
+await assert.rejects(() => runComfyUiGeneration(tampered, { fetchImpl: fakeFetch }), /SHA-256 verification/);
+
+for (const required of ['server/control-map-raster.mjs', 'server/comfyui-provider.mjs', 'server/comfyui-server.mjs', 'src/rendering/stageRenderPasses.ts', 'src/components/VisualStageWorkspace.tsx']) {
   assert.ok(fs.existsSync(required), `missing ${required}`);
 }
 
-console.log('PDS ComfyUI bridge smoke PASSED：Stage control-map raster, upload, workflow patching, queue polling and image return are deterministic.');
+console.log('PDS ComfyUI bridge smoke PASSED：structural maps + full Stage render passes are verified, uploaded, patched and returned deterministically.');
