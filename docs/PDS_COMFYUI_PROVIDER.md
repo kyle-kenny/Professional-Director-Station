@@ -1,6 +1,6 @@
 # PDS 1.6+ · ComfyUI Provider
 
-PDS 1.6 introduced the real ComfyUI generation path. PDS 1.7 added Stage-derived Pose / Depth / Lineart raster controls. PDS 1.8 extends the same provider contract with browser-rendered Scene Depth / Normal / Mask / Edge passes while keeping Stage authoritative and generated media additive.
+PDS 1.6 introduced the real ComfyUI generation path. PDS 1.7 added Stage-derived Pose / Depth / Lineart raster controls. PDS 1.8 added browser-rendered Scene Depth / Normal / Mask / Edge passes. PDS 1.9 makes imported environment / prop / vehicle instances authoritative Shot geometry, so those same Scene Pass inputs now carry the actual placed set geometry as well.
 
 ## Runtime path
 
@@ -8,6 +8,9 @@ PDS 1.6 introduced the real ComfyUI generation path. PDS 1.7 added Stage-derived
 PDS Visual ↔ Stage
   -> pds-ai-generation-1 request
   -> optional browser full-Stage render passes
+       -> actors + FK / IK
+       -> environment / prop / vehicle GLB / FBX instances
+       -> Stage camera / lens / aspect
   -> local PDS ComfyUI bridge (127.0.0.1:8790)
   -> optional structural-map raster + ComfyUI /upload/image
   -> optional verified Scene Pass upload
@@ -65,7 +68,7 @@ If mapped, PDS rasterizes Pose / Depth / Lineart PNGs in the bridge, uploads the
 
 See `docs/PDS_STAGE_CONTROL_MAPS.md`.
 
-## Full Stage render passes from PDS 1.8
+## Full Stage render passes from PDS 1.8+
 
 If one or more Scene Pass nodes are mapped, Visual ↔ Stage captures the current Shot/frame in browser WebGL before generation and attaches a transient `pds-stage-render-passes-1` bundle containing:
 
@@ -74,19 +77,28 @@ If one or more Scene Pass nodes are mapped, Visual ↔ Stage captures the curren
 - Scene Mask PNG
 - Scene Edge PNG
 
-The PNG bodies are not persisted in the PDS project or model profile. Their SHA-256 values and bundle hash participate in generation control provenance.
+PDS 1.9 reconstructs visible Shot `stageAssets` in this offscreen scene using their integrity-checked GLB / FBX binaries, authoritative transforms, visibility and shadow settings. Actor and Stage-asset instance IDs receive deterministic Scene Mask colors.
+
+The PNG bodies are not persisted in the PDS project or model profile. Their SHA-256 values and bundle hash participate in generation control provenance. Visible Stage asset IDs, source versions and transforms also participate in the bundle hash input, so moving a prop invalidates the old control state.
 
 Before upload, the bridge validates exact Shot/frame, PNG signature, dimensions, payload size, and SHA-256. It then uploads each mapped pass and patches the corresponding LoadImage node.
 
 If `PDS Control JSON` is mapped, it receives render-pass metadata and hashes, not the base64 image bodies.
 
-See `docs/PDS_STAGE_RENDER_PASSES.md`.
+See `docs/PDS_STAGE_RENDER_PASSES.md` and `docs/PDS_STAGE_ASSET_INSTANCES.md`.
 
-## Current geometry scope
+## Current authoritative geometry scope
 
-PDS 1.8 captures the authoritative geometry currently reconstructable from the persisted Shot model: current skinned actors with sampled FK / IK, actor transforms, Shot camera/lens/aspect, and Stage ground.
+Since PDS 1.9 the render-pass scene contains the geometry represented authoritatively by the Shot:
 
-The current Shot schema does not yet persist arbitrary environment / prop / vehicle instances with authoritative transforms. PDS therefore does not claim those objects are already part of Scene Depth / Normal / Mask / Edge. The render-pass architecture is ready for them once those Stage instances become authoritative.
+- current skinned actors with sampled FK / IK and actor transforms
+- visible environment instances
+- visible prop instances
+- visible vehicle instances
+- Shot camera / lens / aspect
+- Stage ground
+
+Environment / prop / vehicle instances are backed by the existing project asset registry and IndexedDB binary cache. Their `AssetRef` metadata is snapshotted into the Shot instance so category, version, source format, SHA-256 and provenance remain traceable.
 
 ## Security
 
