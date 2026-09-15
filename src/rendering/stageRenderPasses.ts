@@ -88,7 +88,9 @@ function encodePixelsAsPngBase64(pixels: Uint8ClampedArray, width: number, heigh
   canvas.height = height;
   const context = canvas.getContext('2d');
   if (!context) throw new Error('Stage edge PNG encoding requires a 2D canvas context.');
-  context.putImageData(new ImageData(pixels, width, height), 0, 0);
+  const safePixels = new Uint8ClampedArray(new ArrayBuffer(pixels.byteLength));
+  safePixels.set(pixels);
+  context.putImageData(new ImageData(safePixels, width, height), 0, 0);
   const dataUrl = canvas.toDataURL('image/png');
   return dataUrl.slice(dataUrl.indexOf(',') + 1);
 }
