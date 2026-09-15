@@ -4,14 +4,14 @@ import path from 'node:path';
 const root = process.cwd();
 const required = [
   'src/domain/model.ts','src/domain/defaultProject.ts','src/domain/actorLibrary.ts','src/domain/poseLibrary.ts','src/domain/actorMotions.ts','src/domain/lensPresets.ts','src/domain/skeletonContract.ts','src/domain/humanoidRig.ts','src/domain/collaboration.ts',
-  'src/characters/characterCatalog.ts','src/characters/characterLoader.ts','src/characters/rigRuntime.ts',
+  'src/characters/characterCatalog.ts','src/characters/characterLoader.ts','src/characters/rigRuntime.ts','src/assets/stageAssetLoader.ts',
   'src/engine/DirectorViewport.tsx','src/components/PoseEditorPanel.tsx','src/components/FloorPlanCanvas.tsx','src/components/DirectorFrameCanvas.tsx','src/components/TimelinePanel.tsx','src/components/WaveformStrip.tsx','src/components/AssetLibraryPanel.tsx','src/components/CollaborationPanel.tsx','src/components/ReviewWorkspace.tsx',
-  'src/rendering/directorFrameRenderer.ts','src/editorial/timelineEngine.ts','src/editorial/otio.ts','src/editorial/referenceExport.ts','src/editorial/referenceExportPlan.ts',
-  'src/audio/waveform.ts','src/audio/audioImport.ts','src/audio/audioTransport.ts','src/storage/audioMediaStore.ts','src/utils/assetIngest.ts','src/storage/assetBinaryStore.ts','src/store/assetRegistry.ts','src/store/poseRegistry.ts','src/store/poseUiStore.ts',
+  'src/rendering/directorFrameRenderer.ts','src/rendering/stageRenderPasses.ts','src/editorial/timelineEngine.ts','src/editorial/otio.ts','src/editorial/referenceExport.ts','src/editorial/referenceExportPlan.ts',
+  'src/audio/waveform.ts','src/audio/audioImport.ts','src/audio/audioTransport.ts','src/storage/audioMediaStore.ts','src/utils/assetIngest.ts','src/storage/assetBinaryStore.ts','src/store/assetRegistry.ts','src/store/stageAssetRegistry.ts','src/store/poseRegistry.ts','src/store/poseUiStore.ts',
   'src/collab/collaboration.ts','src/collab/authorization.ts','src/collab/protocol.ts','src/collab/reviewWorkflow.ts','src/collab/sessionIdentity.ts','src/store/reviewRegistry.ts','src/utils/sha256.ts','src/i18n/zhCN.ts',
   'server/auth.mjs','server/local-audit-auth.mjs','server/collab-server.mjs','scripts/collaboration-smoke.mjs','scripts/collaboration-server-smoke.mjs','scripts/install-character-assets.mjs','scripts/character-rig-smoke.mjs','scripts/localization-smoke.mjs',
-  'src/tests/domain.test.ts','src/tests/directorInteraction.test.ts','src/tests/assetIngest.test.ts','src/tests/timelineEngine.test.ts','src/tests/waveform.test.ts','src/tests/otio.test.ts','src/tests/referenceExport.test.ts','src/tests/collaboration.test.ts','src/tests/reviewWorkflow.test.ts','src/tests/physicsIntegrity.test.ts','src/tests/humanoidRig.test.ts',
-  '.github/workflows/ci.yml','start-windows.cmd','docs/WINDOWS_SUPPORT.md','docs/CHARACTER_LIBRARY.md','docs/CHARACTER_ASSETS.md','docs/HUMANOID_POSING.md',
+  'src/tests/domain.test.ts','src/tests/directorInteraction.test.ts','src/tests/assetIngest.test.ts','src/tests/stageAssetInstances.test.ts','src/tests/timelineEngine.test.ts','src/tests/waveform.test.ts','src/tests/otio.test.ts','src/tests/referenceExport.test.ts','src/tests/collaboration.test.ts','src/tests/reviewWorkflow.test.ts','src/tests/physicsIntegrity.test.ts','src/tests/humanoidRig.test.ts',
+  '.github/workflows/ci.yml','start-windows.cmd','docs/WINDOWS_SUPPORT.md','docs/CHARACTER_LIBRARY.md','docs/CHARACTER_ASSETS.md','docs/HUMANOID_POSING.md','docs/PDS_STAGE_ASSET_INSTANCES.md',
 ];
 const failures = [];
 for (const file of required) if (!fs.existsSync(path.join(root, file))) failures.push(`missing: ${file}`);
@@ -19,7 +19,7 @@ const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 const must = (content, contracts, label) => { for (const contract of contracts) if (!content.includes(contract)) failures.push(`${label} missing: ${contract}`); };
 
 const model = read('src/domain/model.ts');
-must(model,["schemaVersion: z.literal('pds-1')","handedness: z.literal('right')","upAxis: z.literal('Y')","forwardAxis: z.literal('-Z')","linearUnit: z.literal('meter')",'frameAspect: z.number().min(0.25).max(4).default(16 / 9)','humanoidRigStateSchema','actorPoseKeyframeSchema','posePath','customPoses','collaboration: projectCollaborationStateSchema'],'domain contract');
+must(model,["schemaVersion: z.literal('pds-1')","handedness: z.literal('right')","upAxis: z.literal('Y')","forwardAxis: z.literal('-Z')","linearUnit: z.literal('meter')",'frameAspect: z.number().min(0.25).max(4).default(16 / 9)','humanoidRigStateSchema','actorPoseKeyframeSchema','posePath','customPoses','stageAssetInstanceSchema','stageAssets: z.array(stageAssetInstanceSchema).default([])','collaboration: projectCollaborationStateSchema'],'domain contract');
 const packageJson = JSON.parse(read('package.json'));
 for (const script of ['build','test','test:visual','characters:install','audit:static','audit:collab','audit:characters','audit:localization','check','collab:server','collab:token']) if (!packageJson.scripts?.[script]) failures.push(`script missing: ${script}`);
 if (!packageJson.dependencies?.mediabunny) failures.push('maintained MP4 media toolkit dependency missing');
@@ -42,11 +42,17 @@ const assetIngest = read('src/utils/assetIngest.ts');
 must(assetIngest,['glb','fbx','fbx-unit-required','MAX_ASSET_INGEST_BYTES','buildNormalizedAssetRef','contentHashSha256',"source: 'import'"],'asset ingest contract');
 const assetCache = read('src/storage/assetBinaryStore.ts');
 must(assetCache,['indexedDB.open','assetBinaryKey'],'asset cache contract');
+const stageAssetLoader = read('src/assets/stageAssetLoader.ts');
+must(stageAssetLoader,['GLTFLoader','FBXLoader','getAssetBinary','sourceUnitScaleMeters','contentHashSha256','instantiateStageAsset','applyStageAssetInstanceState'],'Stage asset loader contract');
+const stageAssetRegistry = read('src/store/stageAssetRegistry.ts');
+must(stageAssetRegistry,['addStageAssetInstance','setStageAssetTransform','setStageAssetVisibility','setStageAssetShadow','duplicateStageAssetInstance','removeStageAssetInstance'],'Stage asset registry contract');
+const renderPasses = read('src/rendering/stageRenderPasses.ts');
+must(renderPasses,['instantiateStageAsset','shot.stageAssets.filter','stageAssetId','sceneDepth','sceneNormal','sceneMask','sceneEdge'],'Stage render-pass asset contract');
 const ci = read('.github/workflows/ci.yml');
 must(ci,['windows-latest','audit:windows','audit:collab','browser-audit','playwright install --with-deps chromium','test:visual'],'CI contract');
 
 const viewport = read('src/engine/DirectorViewport.tsx');
-must(viewport,['instantiateDirectorCharacter','applyActorRigAtTime','rigControlId','rigJointId','focalLengthToVerticalFovDeg','lightObjects','toneMappingExposure','sampleLight','fitAspectRect'],'3D viewport contract');
+must(viewport,['instantiateDirectorCharacter','applyActorRigAtTime','rigControlId','rigJointId','focalLengthToVerticalFovDeg','lightObjects','toneMappingExposure','sampleLight','fitAspectRect','stageAssetObjects','instantiateStageAsset','setStageAssetTransform'],'3D viewport contract');
 if (viewport.includes('new THREE.CapsuleGeometry') || viewport.includes('new THREE.SphereGeometry(actor.demographics.headRadiusM')) failures.push('3D viewport still contains procedural human body geometry');
 const floor = read('src/components/FloorPlanCanvas.tsx');
 must(floor,['sampleLight','cameraGroundFrustum','HFOV'],'floor plan contract');
