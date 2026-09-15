@@ -80,10 +80,11 @@ export async function generateAiMedia(input: {
   if (!profile) throw new Error(`AI profile ${input.profileId} not found.`);
   const frame = timeToFrame(state.playhead, shot.fps);
   const request = buildGenerationRequest(project, shot, input.task, frame, profile, input.prompt, input.negativePrompt ?? '', input.parameters ?? {});
+  const requestTimeoutMs = typeof request.profile.parameters.requestTimeoutMs === 'number' ? request.profile.parameters.requestTimeoutMs : undefined;
   try {
     const generated = profile.provider === 'local-structural'
       ? generateLocalStructuralStoryboard(request)
-      : await invokePdsAiEndpoint(profile, request, input.runtimeToken);
+      : await invokePdsAiEndpoint(profile, request, input.runtimeToken, fetch, requestTimeoutMs);
     if (generated.bytes && generated.record.uri?.startsWith('pds://ai/')) await putAiGeneratedMedia(generated.record.uri, generated.bytes, generated.record.mimeType);
     commitProject((next) => {
       if (next.ai.outputs.some((item) => item.id === generated.record.id)) throw new Error(`Generated output ${generated.record.id} already exists.`);
