@@ -1,6 +1,6 @@
-# PDS 1.6 · ComfyUI Provider
+# PDS 1.6+ · ComfyUI Provider
 
-PDS 1.6 turns the PDS 1.5 Stage → Visual request into a real ComfyUI generation path while keeping Stage authoritative and generated media additive.
+PDS 1.6 introduced the real ComfyUI generation path. PDS 1.7 extends the same provider contract with Stage-derived Pose / Depth / Lineart raster control maps while keeping Stage authoritative and generated media additive.
 
 ## Runtime path
 
@@ -8,6 +8,7 @@ PDS 1.6 turns the PDS 1.5 Stage → Visual request into a real ComfyUI generatio
 PDS Visual ↔ Stage
   -> pds-ai-generation-1 request
   -> local PDS ComfyUI bridge (127.0.0.1:8790)
+  -> optional Stage control-map raster + ComfyUI /upload/image
   -> ComfyUI /prompt
   -> ComfyUI /history/{prompt_id}
   -> ComfyUI /view
@@ -44,9 +45,11 @@ http://127.0.0.1:8790/health
 3. Expand `添加 ComfyUI Provider`.
 4. Load the API workflow JSON.
 5. PDS automatically attempts to identify common KSampler-linked Positive / Negative prompt nodes, the KSampler seed node, a numeric width/height latent node, SaveImage/PreviewImage output, and an optional node titled `PDS Control JSON`.
-6. Review or override any detected node IDs. Positive Prompt is the only required mapping.
-7. Register the provider and select it from the Provider dropdown.
-8. Click `生成 Visual`.
+6. For raster controls, add ordinary `LoadImage` nodes and title them `PDS Pose`, `PDS Depth`, and/or `PDS Lineart`. PDS 1.7 will auto-detect those IDs as well.
+7. Review or override any detected node IDs. Positive Prompt is the only required mapping; control maps are optional per workflow.
+8. Connect those LoadImage nodes to the ControlNet / adapter nodes required by your model.
+9. Register the provider and select it from the Provider dropdown.
+10. Click `生成 Visual`.
 
 For custom Flux graphs or custom nodes whose relationships cannot be inferred safely, leave automatic detection as a convenience only and enter the node IDs explicitly.
 
@@ -62,27 +65,41 @@ By default PDS writes these input names:
 - Width: `width`
 - Height: `height`
 - PDS control JSON: `text`
+- PDS Pose LoadImage: `image`
+- PDS Depth LoadImage: `image`
+- PDS Lineart LoadImage: `image`
 
-The bridge code also supports alternate input-name parameters, so later UI versions can expose custom node input names without changing the provider protocol.
+The bridge code supports alternate input-name parameters for provider integrations without changing the top-level PDS generation contract.
 
-## Stage metadata sent to ComfyUI
+## Stage metadata and raster controls sent to ComfyUI
 
-The normal positive prompt starts with the machine-readable Visual target and includes current Stage facts. The normal AI request also includes the existing PDS frame controls:
+The normal positive prompt starts with the machine-readable Visual target and includes current Stage facts. The normal AI request also includes:
 
 - Shot + exact frame
-- Actor pose / Humanoid Rig-derived structure
-- Camera-space depth values
+- Actor transform and sampled Humanoid FK / IK state
+- OpenPose-compatible 18-point `pose2d` camera projection
+- Camera-space actor depth values
 - Line-art / screen-coordinate structure
 - Camera reference / focal length
 - Lighting structure
 - `composition`, `lighting`, or `look` Visual target
 - frame-derived width / height
 
-If a PDS Control JSON node is configured, the bridge injects the structured `source`, `controls`, and `visualTarget` JSON into that node as well.
+If a PDS Control JSON node is configured, the bridge injects the structured `source`, `controls`, and `visualTarget` JSON into that node.
 
-## What PDS 1.6 does not claim
+If Pose / Depth / Lineart image nodes are configured, PDS 1.7 also rasterizes deterministic PNG maps, uploads them to ComfyUI `input/pds-control`, and writes their returned paths into the corresponding LoadImage nodes before `/prompt` is submitted.
 
-PDS 1.6 does **not** yet rasterize PDS pose/depth data into ControlNet-ready PNG maps. A normal ComfyUI workflow therefore receives the Stage structure through prompt metadata and the optional Control JSON node. Raster Pose / Depth / Lineart control-map generation is the next layer and should be added without changing this provider contract.
+The raster behavior is documented in `docs/PDS_STAGE_CONTROL_MAPS.md`.
+
+## Current raster scope
+
+PDS 1.7 provides:
+
+- frame-authoritative actor pose maps derived from sampled FK / IK
+- actor-relative camera depth maps
+- actor structural lineart maps
+
+It does **not** yet claim full environment mesh Z-buffer depth or full scene edge rendering because the current Shot AI control contract does not expose environment mesh geometry.
 
 ## Security
 
@@ -104,4 +121,4 @@ PDS_ALLOW_REMOTE_COMFYUI=0
 
 ## Failure behavior
 
-ComfyUI queue errors, invalid workflows, missing mapped nodes, empty image output, image responses over 64 MiB, and timeouts are returned through the existing PDS failed-generation provenance path. A failure never mutates the source Stage.
+ComfyUI upload errors, queue errors, invalid workflows, missing mapped nodes, empty image output, image responses over 64 MiB, and timeouts are returned through the existing PDS failed-generation provenance path. A failure never mutates the source Stage.
