@@ -1,14 +1,16 @@
 # PDS 1.6+ · ComfyUI Provider
 
-PDS 1.6 introduced the real ComfyUI generation path. PDS 1.7 extends the same provider contract with Stage-derived Pose / Depth / Lineart raster control maps while keeping Stage authoritative and generated media additive.
+PDS 1.6 introduced the real ComfyUI generation path. PDS 1.7 added Stage-derived Pose / Depth / Lineart raster controls. PDS 1.8 extends the same provider contract with browser-rendered Scene Depth / Normal / Mask / Edge passes while keeping Stage authoritative and generated media additive.
 
 ## Runtime path
 
 ```text
 PDS Visual ↔ Stage
   -> pds-ai-generation-1 request
+  -> optional browser full-Stage render passes
   -> local PDS ComfyUI bridge (127.0.0.1:8790)
-  -> optional Stage control-map raster + ComfyUI /upload/image
+  -> optional structural-map raster + ComfyUI /upload/image
+  -> optional verified Scene Pass upload
   -> ComfyUI /prompt
   -> ComfyUI /history/{prompt_id}
   -> ComfyUI /view
@@ -26,89 +28,75 @@ Run ComfyUI normally, typically on `http://127.0.0.1:8188`, then start:
 npm run comfyui:bridge
 ```
 
-The PDS bridge defaults to:
-
-```text
-http://127.0.0.1:8790/v1/generate
-```
-
-Health check:
-
-```text
-http://127.0.0.1:8790/health
-```
+The PDS bridge defaults to `http://127.0.0.1:8790/v1/generate`. Health is available at `http://127.0.0.1:8790/health`.
 
 ## Register a ComfyUI workflow in Visual ↔ Stage
 
 1. In ComfyUI, export the workflow in **API format JSON**.
-2. Open `Visual ↔ Stage`.
-3. Expand `添加 ComfyUI Provider`.
-4. Load the API workflow JSON.
-5. PDS automatically attempts to identify common KSampler-linked Positive / Negative prompt nodes, the KSampler seed node, a numeric width/height latent node, SaveImage/PreviewImage output, and an optional node titled `PDS Control JSON`.
-6. For raster controls, add ordinary `LoadImage` nodes and title them `PDS Pose`, `PDS Depth`, and/or `PDS Lineart`. PDS 1.7 will auto-detect those IDs as well.
-7. Review or override any detected node IDs. Positive Prompt is the only required mapping; control maps are optional per workflow.
-8. Connect those LoadImage nodes to the ControlNet / adapter nodes required by your model.
-9. Register the provider and select it from the Provider dropdown.
-10. Click `生成 Visual`.
+2. Open `Visual ↔ Stage` and expand `添加 ComfyUI Provider`.
+3. Load the API workflow JSON.
+4. PDS auto-detects common KSampler-linked Positive / Negative prompt nodes, seed, numeric size nodes, SaveImage/PreviewImage output, and an optional `PDS Control JSON` text node.
+5. Add any structural `LoadImage` controls you need and title them `PDS Pose`, `PDS Depth`, and/or `PDS Lineart`.
+6. Add any full-scene `LoadImage` controls you need and title them `PDS Scene Depth`, `PDS Scene Normal`, `PDS Scene Mask`, and/or `PDS Scene Edge`.
+7. Review or override detected node IDs and connect the images to the ControlNet / adapter graph required by your model.
+8. Register the provider, select it, and click `生成 Visual`.
 
-For custom Flux graphs or custom nodes whose relationships cannot be inferred safely, leave automatic detection as a convenience only and enter the node IDs explicitly.
+For custom Flux graphs or custom nodes whose relationships cannot be inferred safely, automatic detection is only a convenience; manual node-ID mapping remains authoritative.
 
 If Output is omitted, the bridge uses the first image output found in ComfyUI history.
 
-## Node input conventions
-
-By default PDS writes these input names:
+## Default node input conventions
 
 - Prompt: `text`
 - Negative prompt: `text`
 - Seed: `seed`
 - Width: `width`
 - Height: `height`
-- PDS control JSON: `text`
-- PDS Pose LoadImage: `image`
-- PDS Depth LoadImage: `image`
-- PDS Lineart LoadImage: `image`
+- PDS Control JSON: `text`
+- all PDS `LoadImage` mappings: `image`
 
-The bridge code supports alternate input-name parameters for provider integrations without changing the top-level PDS generation contract.
+The bridge supports alternate input-name parameters without changing the top-level PDS generation contract.
 
-## Stage metadata and raster controls sent to ComfyUI
+## Structural controls from PDS 1.7
 
-The normal positive prompt starts with the machine-readable Visual target and includes current Stage facts. The normal AI request also includes:
+The normal AI request includes exact Shot/frame, actor transform and sampled FK / IK state, OpenPose-compatible 18-point `pose2d`, actor camera-depth values, line-art structure, camera/lens, lighting, Visual target, and generation dimensions.
 
-- Shot + exact frame
-- Actor transform and sampled Humanoid FK / IK state
-- OpenPose-compatible 18-point `pose2d` camera projection
-- Camera-space actor depth values
-- Line-art / screen-coordinate structure
-- Camera reference / focal length
-- Lighting structure
-- `composition`, `lighting`, or `look` Visual target
-- frame-derived width / height
+If mapped, PDS rasterizes Pose / Depth / Lineart PNGs in the bridge, uploads them to ComfyUI `input/pds-control`, and patches the mapped LoadImage nodes before `/prompt`.
 
-If a PDS Control JSON node is configured, the bridge injects the structured `source`, `controls`, and `visualTarget` JSON into that node.
+See `docs/PDS_STAGE_CONTROL_MAPS.md`.
 
-If Pose / Depth / Lineart image nodes are configured, PDS 1.7 also rasterizes deterministic PNG maps, uploads them to ComfyUI `input/pds-control`, and writes their returned paths into the corresponding LoadImage nodes before `/prompt` is submitted.
+## Full Stage render passes from PDS 1.8
 
-The raster behavior is documented in `docs/PDS_STAGE_CONTROL_MAPS.md`.
+If one or more Scene Pass nodes are mapped, Visual ↔ Stage captures the current Shot/frame in browser WebGL before generation and attaches a transient `pds-stage-render-passes-1` bundle containing:
 
-## Current raster scope
+- Scene Depth PNG
+- Scene Normal PNG
+- Scene Mask PNG
+- Scene Edge PNG
 
-PDS 1.7 provides:
+The PNG bodies are not persisted in the PDS project or model profile. Their SHA-256 values and bundle hash participate in generation control provenance.
 
-- frame-authoritative actor pose maps derived from sampled FK / IK
-- actor-relative camera depth maps
-- actor structural lineart maps
+Before upload, the bridge validates exact Shot/frame, PNG signature, dimensions, payload size, and SHA-256. It then uploads each mapped pass and patches the corresponding LoadImage node.
 
-It does **not** yet claim full environment mesh Z-buffer depth or full scene edge rendering because the current Shot AI control contract does not expose environment mesh geometry.
+If `PDS Control JSON` is mapped, it receives render-pass metadata and hashes, not the base64 image bodies.
+
+See `docs/PDS_STAGE_RENDER_PASSES.md`.
+
+## Current geometry scope
+
+PDS 1.8 captures the authoritative geometry currently reconstructable from the persisted Shot model: current skinned actors with sampled FK / IK, actor transforms, Shot camera/lens/aspect, and Stage ground.
+
+The current Shot schema does not yet persist arbitrary environment / prop / vehicle instances with authoritative transforms. PDS therefore does not claim those objects are already part of Scene Depth / Normal / Mask / Edge. The render-pass architecture is ready for them once those Stage instances become authoritative.
 
 ## Security
 
 - The bridge binds to `127.0.0.1` by default.
 - Binding the bridge to a non-loopback host requires `PDS_COMFYUI_BRIDGE_TOKEN`.
-- The bridge only targets localhost/private-network ComfyUI by default.
+- Local/private-network ComfyUI targets are allowed by default.
 - Remote ComfyUI targets require HTTPS plus `PDS_ALLOW_REMOTE_COMFYUI=1`.
-- Runtime Bridge tokens are supplied through the existing PDS runtime-token field and are not persisted in the project.
-- ComfyUI workflow JSON **is** persisted as part of the model profile, so it must not contain secrets.
+- Runtime Bridge tokens are not persisted in the project.
+- ComfyUI workflow JSON is persisted as part of the model profile and must not contain secrets.
+- Full-scene pass images exist only for the active request and are validated before ComfyUI upload.
 
 ## Environment variables
 
@@ -121,4 +109,4 @@ PDS_ALLOW_REMOTE_COMFYUI=0
 
 ## Failure behavior
 
-ComfyUI upload errors, queue errors, invalid workflows, missing mapped nodes, empty image output, image responses over 64 MiB, and timeouts are returned through the existing PDS failed-generation provenance path. A failure never mutates the source Stage.
+ComfyUI upload errors, queue errors, invalid workflows, missing mapped nodes/passes, render-pass Shot/frame mismatches, bad PNG signatures, SHA-256 mismatches, empty image output, image-size policy violations, and timeouts flow through the existing PDS failed-generation provenance path. A failure never mutates the source Stage.
