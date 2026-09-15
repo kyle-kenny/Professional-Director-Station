@@ -2,6 +2,7 @@ import { ArrowLeftRight, Download, Image, Layers3, Play, Plus } from 'lucide-rea
 import { useEffect, useMemo, useState } from 'react';
 import type { AiModelProfile } from '../domain/ai';
 import { inspectComfyWorkflowJson } from '../ai/comfyWorkflow';
+import { captureStageRenderPasses } from '../rendering/stageRenderPasses';
 import { getAiGeneratedMedia } from '../storage/aiMediaStore';
 import { generateAiMedia, upsertAiModelProfile } from '../store/aiRegistry';
 import { useDirectorStore } from '../store/directorStore';
@@ -24,6 +25,8 @@ const variants: Array<{ id: VisualFixtureVariant; label: string; note: string }>
   { id: 'look', label: 'Look', note: '综合色调、材质、氛围与最终视觉方向' },
 ];
 
+const scenePassParameterKeys = ['sceneDepthImageNodeId', 'sceneNormalImageNodeId', 'sceneMaskImageNodeId', 'sceneEdgeImageNodeId'] as const;
+
 function downloadJson(filename: string, value: unknown) {
   const blob = new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -44,6 +47,11 @@ function remoteProfileId(modelId: string): string {
 
 function comfyProfileId(modelId: string): string {
   return `comfy-${providerStem(modelId)}`;
+}
+
+function profileUsesSceneRenderPasses(profile?: AiModelProfile) {
+  if (!profile || profile.provider !== 'pds-http') return false;
+  return scenePassParameterKeys.some((key) => typeof profile.defaultParameters[key] === 'string' && String(profile.defaultParameters[key]).trim());
 }
 
 export function VisualStageWorkspace() {
@@ -77,6 +85,10 @@ export function VisualStageWorkspace() {
   const [comfyPoseImageNodeId, setComfyPoseImageNodeId] = useState('');
   const [comfyDepthImageNodeId, setComfyDepthImageNodeId] = useState('');
   const [comfyLineartImageNodeId, setComfyLineartImageNodeId] = useState('');
+  const [comfySceneDepthNodeId, setComfySceneDepthNodeId] = useState('');
+  const [comfySceneNormalNodeId, setComfySceneNormalNodeId] = useState('');
+  const [comfySceneMaskNodeId, setComfySceneMaskNodeId] = useState('');
+  const [comfySceneEdgeNodeId, setComfySceneEdgeNodeId] = useState('');
   const [comfyOutputNodeId, setComfyOutputNodeId] = useState('');
   const [bridgeStatus, setBridgeStatus] = useState('');
 
@@ -100,6 +112,7 @@ export function VisualStageWorkspace() {
     : undefined, [generationParameters, negativePrompt, project, prompt, selectedProfile, sequence.id, shot, stage.frame, variant]);
   const outputs = useMemo(() => stageVisualOutputsForFrame(project.ai.outputs, shot.id, stage.frame, variant), [project.ai.outputs, shot.id, stage.frame, variant]);
   const selectedOutput = outputs.find((output) => output.id === selectedOutputId) ?? outputs[0];
+  const scenePassesEnabled = profileUsesSceneRenderPasses(selectedProfile);
 
   useEffect(() => {
     if (selectedProfile && selectedProfile.id !== profileId) setProfileId(selectedProfile.id);
@@ -131,6 +144,13 @@ export function VisualStageWorkspace() {
     setBusy(true);
     setMessage('');
     try {
+      const renderPasses = scenePassesEnabled
+        ? await (async () => {
+          setMessage('正在从当前 3D Stage 离屏渲染 Scene Depth / Normal / Mask / Edge…');
+          return captureStageRenderPasses(shot, stage.frame, targetWidth, targetHeight);
+        })()
+        : undefined;
+      if (renderPasses) setMessage(`Stage Render Passes 已捕获 · ${renderPasses.bundleHashSha256.slice(0, 12)} · 正在发送到 ComfyUI…`);
       const record = await generateAiMedia({
         profileId: selectedProfile.id,
         task: 'storyboard',
@@ -138,9 +158,10 @@ export function VisualStageWorkspace() {
         negativePrompt: generationPreview.request.negativePrompt,
         runtimeToken,
         parameters: generationParameters,
+        renderPasses,
       });
       setSelectedOutputId(record.id);
-      setMessage(`Visual 已生成：${record.id}`);
+      setMessage(`Visual 已生成：${record.id}${renderPasses ? ` · render-pass ${renderPasses.bundleHashSha256.slice(0, 12)}` : ''}`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Stage → Visual 生成失败。');
     } finally {
@@ -181,6 +202,10 @@ export function VisualStageWorkspace() {
     if (inspected.hints.poseImageNodeId) setComfyPoseImageNodeId(inspected.hints.poseImageNodeId);
     if (inspected.hints.depthImageNodeId) setComfyDepthImageNodeId(inspected.hints.depthImageNodeId);
     if (inspected.hints.lineartImageNodeId) setComfyLineartImageNodeId(inspected.hints.lineartImageNodeId);
+    if (inspected.hints.sceneDepthImageNodeId) setComfySceneDepthNodeId(inspected.hints.sceneDepthImageNodeId);
+    if (inspected.hints.sceneNormalImageNodeId) setComfySceneNormalNodeId(inspected.hints.sceneNormalImageNodeId);
+    if (inspected.hints.sceneMaskImageNodeId) setComfySceneMaskNodeId(inspected.hints.sceneMaskImageNodeId);
+    if (inspected.hints.sceneEdgeImageNodeId) setComfySceneEdgeNodeId(inspected.hints.sceneEdgeImageNodeId);
     if (inspected.hints.outputNodeId) setComfyOutputNodeId(inspected.hints.outputNodeId);
     const detected = Object.entries(inspected.hints).filter(([, value]) => value).map(([key, value]) => `${key}=${value}`).join(' · ');
     setMessage(detected ? `已载入 ${name}，自动识别：${detected}` : `已载入 ${name}；该工作流需要手动填写节点映射。`);
@@ -224,6 +249,10 @@ export function VisualStageWorkspace() {
       if (comfyPoseImageNodeId.trim()) parameters.poseImageNodeId = comfyPoseImageNodeId.trim();
       if (comfyDepthImageNodeId.trim()) parameters.depthImageNodeId = comfyDepthImageNodeId.trim();
       if (comfyLineartImageNodeId.trim()) parameters.lineartImageNodeId = comfyLineartImageNodeId.trim();
+      if (comfySceneDepthNodeId.trim()) parameters.sceneDepthImageNodeId = comfySceneDepthNodeId.trim();
+      if (comfySceneNormalNodeId.trim()) parameters.sceneNormalImageNodeId = comfySceneNormalNodeId.trim();
+      if (comfySceneMaskNodeId.trim()) parameters.sceneMaskImageNodeId = comfySceneMaskNodeId.trim();
+      if (comfySceneEdgeNodeId.trim()) parameters.sceneEdgeImageNodeId = comfySceneEdgeNodeId.trim();
       if (comfyOutputNodeId.trim()) parameters.outputNodeId = comfyOutputNodeId.trim();
       const profile: AiModelProfile = {
         id: comfyProfileId(comfyModelId),
@@ -238,8 +267,9 @@ export function VisualStageWorkspace() {
       };
       upsertAiModelProfile(profile);
       setProfileId(profile.id);
-      const controlCount = [comfyPoseImageNodeId, comfyDepthImageNodeId, comfyLineartImageNodeId].filter((value) => value.trim()).length;
-      setMessage(`已注册 ${profile.label}。生成时会通过 PDS Bridge 调用 ComfyUI${controlCount ? `，并上传 ${controlCount} 张 Stage 控制图` : ''}。`);
+      const structuralCount = [comfyPoseImageNodeId, comfyDepthImageNodeId, comfyLineartImageNodeId].filter((value) => value.trim()).length;
+      const renderPassCount = [comfySceneDepthNodeId, comfySceneNormalNodeId, comfySceneMaskNodeId, comfySceneEdgeNodeId].filter((value) => value.trim()).length;
+      setMessage(`已注册 ${profile.label}。生成时会通过 PDS Bridge 调用 ComfyUI${structuralCount ? `，上传 ${structuralCount} 张结构控制图` : ''}${renderPassCount ? `，并离屏渲染 ${renderPassCount} 张全 Stage Pass` : ''}。`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'ComfyUI Provider 注册失败。');
     }
@@ -260,7 +290,7 @@ export function VisualStageWorkspace() {
 
   return <div className="visual-stage-workspace">
     <header className="visual-stage-header">
-      <div><span className="chip">PDS 1.7 · Stage Control Maps</span><h2>{VISUAL_STAGE_UI.workspace}</h2><p>把当前 Shot / Frame 的 Stage 状态转成结构化 AI 控制条件，并将 Pose / Depth / Lineart 栅格控制图真正上传到 ComfyUI 工作流。生成结果仍只作为可追溯媒体写回，不会自动改动 Stage。</p></div>
+      <div><span className="chip">PDS 1.8 · Full Stage Render Passes</span><h2>{VISUAL_STAGE_UI.workspace}</h2><p>在 Pose / Depth / Lineart 结构控制之外，直接从当前 3D Stage 离屏渲染 Scene Depth / Normal / Mask / Edge，并把这些 PNG 注入 ComfyUI。Render Pass 仅随单次请求传输，不写入工程。</p></div>
       <div className="visual-stage-frame"><b>{shot.name}</b><span>Frame {stage.frame}</span><small>{shot.fps} fps · {shot.frameAspect.toFixed(3)} · {targetWidth}×{targetHeight}</small></div>
     </header>
 
@@ -275,24 +305,25 @@ export function VisualStageWorkspace() {
         <ArrowLeftRight size={24}/>
         <strong>{direction === 'visual-to-stage' ? VISUAL_STAGE_UI.visualToStage : VISUAL_STAGE_UI.stageToVisual}</strong>
         <div className="bridge-switch"><button className={direction === 'visual-to-stage' ? 'active' : ''} onClick={() => setDirection('visual-to-stage')}>Visual → Stage</button><button className={direction === 'stage-to-visual' ? 'active' : ''} onClick={() => setDirection('stage-to-visual')}>Stage → Visual</button></div>
-        <span className={direction === 'stage-to-visual' ? 'live-badge' : 'draft-badge'}>{direction === 'stage-to-visual' ? 'CONTROL MAP READY' : 'PHASE 1 LINK'}</span>
+        <span className={direction === 'stage-to-visual' ? 'live-badge' : 'draft-badge'}>{direction === 'stage-to-visual' ? (scenePassesEnabled ? 'FULL STAGE PASS READY' : 'CONTROL MAP READY') : 'PHASE 1 LINK'}</span>
       </section>
 
       <section className="visual-stage-card stage-side">
         <div className="visual-stage-card-title"><Layers3 size={17}/><div><strong>{VISUAL_STAGE_UI.stage}</strong><span>Authoritative frame snapshot</span></div></div>
         <div className="stage-metrics"><div><b>{stage.actors.length}</b><span>Actors</span></div><div><b>{stage.lights.length}</b><span>Lights</span></div><div><b>{stage.camera.focalLengthMm.toFixed(0)} mm</b><span>Lens</span></div></div>
-        <div className="artifact-readout"><span>Control maps</span><code>Pose · Depth · Lineart</code><small>Pose uses frame-authoritative FK / IK projection; all maps follow the current Stage camera and frame.</small></div>
+        <div className="artifact-readout"><span>Render controls</span><code>Pose · Depth · Lineart · Scene Z · Normal · Mask · Edge</code><small>Scene Pass 使用当前帧真实角色网格、FK / IK、Stage 摄影机与地面；未来持久化进 Stage 的环境/道具网格会沿用同一离屏渲染通道。</small></div>
       </section>
     </div>
 
     <section className="stage-visual-generator">
       <div className="stage-visual-config">
-        <div className="stage-visual-section-head"><div><strong>Stage → Visual Generation</strong><p>ComfyUI Provider 可把当前帧的 Stage 控制图上传到对应 LoadImage / ControlNet 链路。</p></div><span>{generationPreview?.schemaVersion ?? 'no-provider'}</span></div>
+        <div className="stage-visual-section-head"><div><strong>Stage → Visual Generation</strong><p>映射 Scene Pass 节点后，PDS 会在发送请求前用浏览器 WebGL 捕获当前 3D Stage，再由 Bridge 验证并上传到 ComfyUI。</p></div><span>{generationPreview?.schemaVersion ?? 'no-provider'}</span></div>
         <label><span>Provider</span><select aria-label="Visual provider" value={selectedProfile?.id ?? ''} onChange={(event) => setProfileId(event.target.value)}>{eligibleProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.label} · {profile.modelId}@{profile.revision}</option>)}</select></label>
         <label><span>Prompt</span><textarea rows={4} value={prompt} onChange={(event) => setPrompt(event.target.value)}/></label>
         <label><span>Negative</span><textarea rows={3} value={negativePrompt} onChange={(event) => setNegativePrompt(event.target.value)}/></label>
         <label><span>Runtime token</span><input type="password" value={runtimeToken} onChange={(event) => setRuntimeToken(event.target.value)} placeholder="仅当前会话，不写入工程"/></label>
-        <button className="generate-visual-button" disabled={busy || !selectedProfile || direction !== 'stage-to-visual'} onClick={() => void doGenerate()}><Play size={15}/>{busy ? '生成中…' : '生成 Visual'}</button>
+        <button className="generate-visual-button" disabled={busy || !selectedProfile || direction !== 'stage-to-visual'} onClick={() => void doGenerate()}><Play size={15}/>{busy ? (scenePassesEnabled ? '渲染 / 生成中…' : '生成中…') : '生成 Visual'}</button>
+        {scenePassesEnabled && <small className="stage-visual-note">当前 Provider 已启用 Full Stage Render Passes。四张 PNG 只存在于本次生成请求中，工程仅保留控制 hash。</small>}
         {direction !== 'stage-to-visual' && <small className="stage-visual-note">切换到 Stage → Visual 后才能执行生成；Visual → Stage 仍保持只读桥接。</small>}
 
         <details className="provider-register comfy-register">
@@ -304,7 +335,7 @@ export function VisualStageWorkspace() {
             <label><span>模型 / 工作流名</span><input value={comfyModelId} onChange={(event) => setComfyModelId(event.target.value)} placeholder="flux-controlnet-workflow"/></label>
             <label className="comfy-workflow-file"><span>API Workflow</span><input type="file" accept="application/json,.json" onChange={(event) => loadComfyWorkflow(event.target.files?.[0])}/><small>{comfyWorkflowName || '在 ComfyUI 中导出 API format JSON 后载入'}</small></label>
             <textarea rows={5} value={comfyWorkflowJson} onChange={(event) => { setComfyWorkflowJson(event.target.value); setComfyWorkflowName('手动粘贴'); }} placeholder="也可以直接粘贴 ComfyUI API workflow JSON"/>
-            <div className="comfy-health"><button onClick={detectComfyNodes}>自动识别节点</button><span>给 LoadImage 节点命名 PDS Pose / PDS Depth / PDS Lineart 可自动识别</span></div>
+            <div className="comfy-health"><button onClick={detectComfyNodes}>自动识别节点</button><span>支持 PDS Pose / Depth / Lineart 以及 PDS Scene Depth / Normal / Mask / Edge</span></div>
             <div className="comfy-node-grid">
               <label><span>Positive *</span><input value={comfyPositiveNodeId} onChange={(event) => setComfyPositiveNodeId(event.target.value)} placeholder="node id"/></label>
               <label><span>Negative</span><input value={comfyNegativeNodeId} onChange={(event) => setComfyNegativeNodeId(event.target.value)} placeholder="node id"/></label>
@@ -313,11 +344,15 @@ export function VisualStageWorkspace() {
               <label><span>PDS Pose PNG</span><input value={comfyPoseImageNodeId} onChange={(event) => setComfyPoseImageNodeId(event.target.value)} placeholder="LoadImage node"/></label>
               <label><span>PDS Depth PNG</span><input value={comfyDepthImageNodeId} onChange={(event) => setComfyDepthImageNodeId(event.target.value)} placeholder="LoadImage node"/></label>
               <label><span>PDS Lineart PNG</span><input value={comfyLineartImageNodeId} onChange={(event) => setComfyLineartImageNodeId(event.target.value)} placeholder="LoadImage node"/></label>
+              <label><span>PDS Scene Depth</span><input value={comfySceneDepthNodeId} onChange={(event) => setComfySceneDepthNodeId(event.target.value)} placeholder="LoadImage node"/></label>
+              <label><span>PDS Scene Normal</span><input value={comfySceneNormalNodeId} onChange={(event) => setComfySceneNormalNodeId(event.target.value)} placeholder="LoadImage node"/></label>
+              <label><span>PDS Scene Mask</span><input value={comfySceneMaskNodeId} onChange={(event) => setComfySceneMaskNodeId(event.target.value)} placeholder="LoadImage node"/></label>
+              <label><span>PDS Scene Edge</span><input value={comfySceneEdgeNodeId} onChange={(event) => setComfySceneEdgeNodeId(event.target.value)} placeholder="LoadImage node"/></label>
               <label><span>PDS Control JSON</span><input value={comfyControlNodeId} onChange={(event) => setComfyControlNodeId(event.target.value)} placeholder="optional text node"/></label>
               <label><span>Output</span><input value={comfyOutputNodeId} onChange={(event) => setComfyOutputNodeId(event.target.value)} placeholder="optional SaveImage node"/></label>
             </div>
             <button onClick={addComfyProfile}>注册 ComfyUI Provider</button>
-            <small className="stage-visual-note">填写任一控制图节点后，Bridge 会为当前 Shot / Frame 栅格化对应 PNG、上传到 ComfyUI input/pds-control，再写回该 LoadImage 节点。Workflow JSON 会保存在工程中，密码 / Bridge token 不会持久化。</small>
+            <small className="stage-visual-note">映射 Scene Pass 后，浏览器先捕获真实 Stage PNG，Bridge 再校验 Shot / Frame、PNG 签名与 SHA-256 并上传。当前 Shot 模型尚无通用环境/道具实例集合，因此 1.8 的真实几何范围是角色网格 + Stage 地面；不会把尚不存在的环境几何宣传成已支持。</small>
           </div>
         </details>
 
@@ -336,7 +371,7 @@ export function VisualStageWorkspace() {
     </section>
 
     <section className="visual-stage-intent">
-      <div><strong>Contract / Request Preview</strong><p>Visual 与 Stage 仍通过同一 Shot / Frame 契约绑定；ComfyUI Provider 收到的请求包含 FK / IK Pose 投影、Depth、Lineart、Camera、Lighting、variant 与目标尺寸。</p></div>
+      <div><strong>Contract / Request Preview</strong><p>Visual 与 Stage 通过同一 Shot / Frame 契约绑定；真正生成时，若 Provider 映射了 Scene Pass，PDS 会额外注入该帧离屏渲染的 Depth / Normal / Mask / Edge，并把它们的 bundle hash 纳入 control provenance。</p></div>
       <pre>{JSON.stringify(direction === 'stage-to-visual' && generationPreview ? generationPreview : intent, null, 2)}</pre>
       <div className="visual-stage-actions"><button onClick={() => downloadJson(stage.filename, stage)}><Download size={15}/>导出 Stage Artifact</button><button onClick={() => downloadJson(`${intent.id}.pds-link.json`, intent)}><Download size={15}/>导出 Link Intent</button>{generationPreview && <button onClick={() => downloadJson(`${shot.id}__stage-visual-request__f${String(stage.frame).padStart(6, '0')}.json`, generationPreview)}><Download size={15}/>导出 Generation Request</button>}</div>
     </section>
