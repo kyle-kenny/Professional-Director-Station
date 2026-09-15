@@ -78,4 +78,4 @@ export const projectSchema = z.object({
   updatedAt: z.string().min(1),
 });
 export type DirectorProject = z.infer<typeof projectSchema>;
-export type WorkspaceMode = '3d' | 'floorplan' | 'frame' | 'timeline' | 'assets' | 'review' | 'pipeline' | 'ai';
+export type WorkspaceMode = '3d' | 'floorplan' | 'frame' | 'timeline' | 'assets' | 'review' | 'pipeline' | 'ai' | 'visual-stage';

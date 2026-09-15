@@ -8,6 +8,7 @@ import './review.css';
 import './pipeline.css';
 import './ai.css';
 import './assets-workspace.css';
+import './visual-stage.css';
 import './integrity.css';
 import './pose.css';
 import './director-console.css';

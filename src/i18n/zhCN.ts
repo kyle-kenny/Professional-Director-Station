@@ -2,7 +2,7 @@ import type { AudioClip, AssetRef, DirectorLight, WorkspaceMode } from '../domai
 import type { ProjectRole } from '../domain/collaboration';
 
 export const workspaceZh: Record<WorkspaceMode, string> = {
-  '3d': '3D 导演台', floorplan: '2D 站位', frame: '2D 构图', timeline: '时间线 / 声音', assets: '资产库', review: '协作 / 审片', pipeline: '制作管线', ai: 'AI 制作',
+  '3d': '3D 导演台', floorplan: '2D 站位', frame: '2D 构图', timeline: '时间线 / 声音', 'visual-stage': 'Visual ↔ Stage', assets: '资产库', review: '协作 / 审片', pipeline: '制作管线', ai: 'AI 制作',
 };
 export const shotStatusZh = { WIP: '制作中', REVIEW: '审片中', APPROVED: '已批准' } as const;
 export const audioKindZh: Record<AudioClip['kind'], string> = { dialogue: '对白', music: '音乐', sfx: '音效', ambience: '环境声' };
